@@ -22,38 +22,25 @@ public:
 
   Eigen::Vector3d getZmpFromExternalForces();
 
-  
-
-  Eigen::MatrixXd getJacobian();
-  Eigen::MatrixXd getJacobianDeriv();
-
-  
-
-  Eigen::VectorXd getJointAccelerations(State desired, State current, WalkState walkState);
   Eigen::VectorXd getJointVelocities(State desired, State current, WalkState walkState);
-  Eigen::VectorXd getJointAccelerationsQP2(State desired, State current, WalkState walkState);
-  Eigen::VectorXd getJointAccelerationsQPJointLevel(State desired, State current, WalkState walkState);
-  Eigen::VectorXd getJointTorques(State desired, State current, WalkState walkState);
-  Eigen::VectorXd getJointTorquesSimple(State desired, State current, WalkState walkState);
+
   State getCurrentRobotState();
   State getDesiredRobotState(int i);
 
 private:
-  dart::dynamics::SkeletonPtr mRobot;
-
-  dart::dynamics::BodyNode* mTorso;
-
   dart::simulation::WorldPtr mWorld;
-
+  dart::dynamics::SkeletonPtr mRobot;
+  
+  dart::dynamics::BodyNode* mTorso;
   dart::dynamics::BodyNode* mLeftFoot;
   dart::dynamics::BodyNode* mRightFoot;
   dart::dynamics::BodyNode* mSupportFoot;
   dart::dynamics::BodyNode* mSwingFoot;
   dart::dynamics::BodyNode* mBase;
 
-  State desired;
-  State current;
-  State initial;
+  State desired, current, initial;
+  Eigen::VectorXd initialConfiguration;
+  
   WalkState walkState;
 
   FootstepPlan* footstepPlan;
@@ -61,8 +48,6 @@ private:
   std::vector<Logger*> logList;
 
   std::vector<State> ref;
-
-  Eigen::VectorXd initialConfiguration;
 
 public:
 

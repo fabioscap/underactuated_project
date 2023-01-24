@@ -4,6 +4,7 @@
 #include <dart/utils/urdf/urdf.hpp>
 #include <dart/gui/gui.hpp>
 #include "WorldNode.hpp"
+#include <filesystem>
 
 int main(int argc, char* argv[])
 {
@@ -30,13 +31,16 @@ int main(int argc, char* argv[])
 	  }
 	  if(dim==1) {
                   //hrp4->getJoint(i)->setActuatorType(dart::dynamics::Joint::ACCELERATION);
-                  //hrp4->getJoint(i)->setActuatorType(dart::dynamics::Joint::VELOCITY);
-		  hrp4->getJoint(i)->setActuatorType(dart::dynamics::Joint::FORCE);
+                  hrp4->getJoint(i)->setActuatorType(dart::dynamics::Joint::VELOCITY);
+		  //hrp4->getJoint(i)->setActuatorType(dart::dynamics::Joint::FORCE);
 		  //hrp4->getJoint(i)->setForceUpperLimit(0,  forceLimit);
 		  //hrp4->getJoint(i)->setForceLowerLimit(0, -forceLimit);
 		  hrp4->getJoint(i)->setPositionLimitEnforced(true);
 	  }
   }
+  
+  // Create data folder
+  std::filesystem::create_directories("../data");
 
   // Set gravity of the world
   world->setGravity(Eigen::Vector3d(0.0, 0.0, -9.81));
