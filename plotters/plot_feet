@@ -1,0 +1,24 @@
+set multiplot layout 3,3 columnsfirst
+
+plot "../data/desired.leftFoot.pos" using 1 with lines title "left y", \
+     "../data/current.leftFoot.pos" using 1 with lines title "left y"
+plot "../data/desired.leftFoot.pos" using 2 with lines title "left y", \
+     "../data/current.leftFoot.pos" using 2 with lines title "left y"
+plot "../data/desired.leftFoot.pos" using 3 with lines title "left z", \
+     "../data/current.leftFoot.pos" using 3 with lines title "left z"
+
+plot "../data/desired.rightFoot.pos" using 1 with lines title "right x", \
+     "../data/current.rightFoot.pos" using 1 with lines title "right x"
+plot "../data/desired.rightFoot.pos" using 2 with lines title "right y", \
+     "../data/current.rightFoot.pos" using 2 with lines title "right y"
+plot "../data/desired.rightFoot.pos" using 3 with lines title "right z", \
+     "../data/current.rightFoot.pos" using 3 with lines title "right z"
+     
+plot "../data/desired.com.ang" using 1 with lines title "right x", \
+     "../data/current.com.ang" using 1 with lines title "right x"
+plot "../data/desired.com.ang" using 2 with lines title "right y", \
+     "../data/current.com.ang" using 2 with lines title "right y"
+plot "../data/desired.com.ang" using 3 with lines title "right z", \
+     "../data/current.com.ang" using 3 with lines title "right z"
+
+pause -1 "Hit any key to continue"
