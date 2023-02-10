@@ -22,6 +22,9 @@ class FootstepPlan{
     int getFootstepEndTiming(int num);
     int getFootstepDuration(int num);
     int getFootstepIndexAtTime(int time);
+    bool isSingleSupport(int time);
+    bool isDoubleSupport(int time);
+    bool isAscendingPhase(int time);
     int getSize();
     std::vector<Eigen::VectorXd> getPlan();
 

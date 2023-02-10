@@ -263,6 +263,22 @@ bool FootstepPlan::isSupportFootLeft(int num) {
     }
 }
 
+bool FootstepPlan::isSingleSupport(int time) {
+    int timeLeft = getFootstepEndTiming(getFootstepIndexAtTime(time)) - time;
+    return timeLeft > doubleSupportSamples;
+}
+
+bool FootstepPlan::isDoubleSupport(int time) {
+    int timeLeft = getFootstepEndTiming(getFootstepIndexAtTime(time)) - time;
+    return timeLeft <= doubleSupportSamples;
+}
+
+bool FootstepPlan::isAscendingPhase(int time) {
+    int ssStart = getFootstepStartTiming(getFootstepIndexAtTime(time));
+    int ssEnd = getFootstepEndTiming(getFootstepIndexAtTime(time)) - doubleSupportSamples;
+    return time - ssStart <= ssEnd - time;
+}
+
 int FootstepPlan::getSize() { return footstepPlan.size(); }
 
 std::vector<Eigen::VectorXd> FootstepPlan::getPlan() { return footstepPlan; }

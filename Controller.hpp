@@ -9,6 +9,7 @@
 #include <string>
 #include "computeReferenceTrajectory.hpp"
 #include <labrob_qpsolvers/qpsolvers.hpp>
+#include "ISMPC.hpp"
 
 class Controller
 {
@@ -17,6 +18,7 @@ public:
   virtual ~Controller();
 
   void update();
+  void draw();
   
   void setInitialConfiguration();
 
@@ -37,6 +39,9 @@ private:
   dart::dynamics::BodyNode* mSupportFoot;
   dart::dynamics::BodyNode* mSwingFoot;
   dart::dynamics::BodyNode* mBase;
+  
+  Eigen::Vector3d comMPC, comMPCdot;
+  
 
   State desired, current, initial;
   Eigen::VectorXd initialConfiguration;
@@ -48,6 +53,8 @@ private:
   std::vector<Logger*> logList;
 
   std::vector<State> ref;
+  
+  std::unique_ptr<ISMPC> ismpc;
 
 public:
 

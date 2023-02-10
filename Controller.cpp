@@ -51,9 +51,9 @@ Controller::Controller(dart::dynamics::SkeletonPtr _robot, dart::simulation::Wor
     std::vector<Vref> vrefSequence;
 
     for (int i = 0; i < 5000; i++) {
-        if (i < 100) vrefSequence.push_back(Vref(0.0, 0.0, 0.00));
-        else vrefSequence.push_back(Vref(0.1, 0.0, 0.00));
-        //vrefSequence.push_back(Vref(0.0, 0.0, 0.00));
+        if (i < 100) vrefSequence.push_back(Vref(0.0, 0.0, 0.0));
+        else vrefSequence.push_back(Vref(0.3, 0.0, 0.0));
+        //vrefSequence.push_back(Vref(0.0, 0.0, 0.0));
     }
     
     // Plan footsteps
@@ -67,11 +67,13 @@ Controller::Controller(dart::dynamics::SkeletonPtr _robot, dart::simulation::Wor
     
     // Compute referefence trajectory
     // this computes reference trajectory according to footstep plan
-    ref = computeReferenceTrajectory(footstepPlan, initial, 2000);
+    //ref = computeReferenceTrajectory(footstepPlan, initial, 2000);
     // this fill the reference trajectory with the initial state
     for (int i = 0; i < 2000; i++) {
-        //ref.push_back(initial);
+        ref.push_back(initial);
     }
+    
+    ismpc = std::make_unique<ISMPC>(footstepPlan, initial, mRobot);
 
     // Create file loggers
     logList.push_back(new Logger("desired.comPos", &desired.com.pos));
@@ -108,16 +110,23 @@ Controller::~Controller() {}
 void Controller::update() {
     walkState.simulationTime = mWorld->getSimFrames();
     
-    // This adds a push to the robot
-    //if (walkState.simulationTime>=210 && walkState.simulationTime<=220) mTorso->addExtForce(Eigen::Vector3d(50,0,0));
-
-    // Plot trajectories
-    //if (walkState.simulationTime==500) system("gnuplot ../plotters/plot");
     
+    
+    // This adds a push to the robot
+    //if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,70,0));
+
     // Retrieve current and desired state
     current = getCurrentRobotState();
-    desired = ref.at(walkState.iter);
-    walkState.supportFoot = footstepPlan->getFootstepIndexAtTime(walkState.iter) % 2 == 0 ? walkState.supportFoot = Foot::RIGHT : walkState.supportFoot = Foot::LEFT;
+    //desired = ref.at(walkState.iter);
+    //walkState.supportFoot = footstepPlan->getFootstepIndexAtTime(walkState.iter) % 2 == 0 ? walkState.supportFoot = Foot::RIGHT : walkState.supportFoot = Foot::LEFT;
+    walkState.supportFoot = walkState.footstepCounter % 2 == 0 ? walkState.supportFoot = Foot::RIGHT : walkState.supportFoot = Foot::LEFT;
+
+    // Store the results in files (for plotting)
+    for (int i = 0; i < logList.size(); ++i) {
+        logList.at(i)->log();
+    }
+
+    desired = ismpc->MPC(walkState, current);
 
     // Compute inverse kinematics
     Eigen::VectorXd qDot =  getJointVelocities(desired, current, walkState);
@@ -125,11 +134,6 @@ void Controller::update() {
     // Set the acceleration of each joint
     for (int i = 0; i < 50; ++i) {
         mRobot->setCommand(i+6,qDot(i));
-    }
-
-    // Store the results in files (for plotting)
-    for (int i = 0; i < logList.size(); ++i) {
-        logList.at(i)->log();
     }
 
     // right arm
@@ -155,9 +159,13 @@ void Controller::update() {
     double kArms = 0.1;
     mRobot->setVelocity(mRobot->getDof("L_SHOULDER_P")->getIndexInSkeleton(), - kArms * (leftShoulderCurr - leftShoulderCurr));
     mRobot->setVelocity(mRobot->getDof("R_SHOULDER_P")->getIndexInSkeleton(), - kArms * (rightShoulderCurr - rightShoulderCurr));*/
+    
+    // Draw on the screen
+    draw();
 
     // Update the iteration counters
     ++walkState.iter;
+    walkState.footstepCounter = walkState.iter / (S + D);
 }
 
 Eigen::VectorXd Controller::getJointVelocities(State desired, State current, WalkState walkState) {
@@ -171,8 +179,8 @@ Eigen::VectorXd Controller::getJointVelocities(State desired, State current, Wal
     
     int n_dof_ = 56;
     double CoM_gains = 0.5;
-    double left_gains = 2;
-    double right_gains = 2;
+    double left_gains = 1;
+    double right_gains = 1;
     double base_gains = 0.5;
     
     // Jacobians
@@ -310,6 +318,14 @@ Eigen::Vector3d Controller::getZmpFromExternalForces()
     }
 
     return zmp_v;
+}
+
+void Controller::draw() {
+    std::shared_ptr<dart::dynamics::BoxShape> box;
+    box = std::make_shared<dart::dynamics::BoxShape>(Eigen::Vector3d(footConstraintSquareWidth, footConstraintSquareWidth, 0.01));
+    //dart::dynamics::BoxShape::Properties box_properties;
+    //box->setPositions(
+    //mTorso->createShapeNodeWith<VisualAspect>(mArrow);
 }
 
 void Controller::setInitialConfiguration() {
