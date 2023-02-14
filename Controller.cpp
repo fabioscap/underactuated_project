@@ -103,6 +103,10 @@ Controller::Controller(dart::dynamics::SkeletonPtr _robot, dart::simulation::Wor
     
     logList.push_back(new Logger("desired.com.ang", &desired.com.ang_pos));
     logList.push_back(new Logger("current.com.ang", &current.com.ang_pos));
+    
+    logList.push_back(new Logger("desired.leftFoot.ang_pos", &desired.leftFoot.ang_pos));
+    logList.push_back(new Logger("desired.leftFoot.ang_vel", &desired.leftFoot.ang_vel));
+    logList.push_back(new Logger("desired.leftFoot.ang_acc", &desired.leftFoot.ang_acc));
 }
 
 Controller::~Controller() {}
@@ -113,7 +117,7 @@ void Controller::update() {
     
     
     // This adds a push to the robot
-    //if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,70,0));
+    if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,100,0));
 
     // Retrieve current and desired state
     current = getCurrentRobotState();
@@ -129,14 +133,15 @@ void Controller::update() {
     desired = ismpc->MPC(walkState, current);
 
     // Compute inverse kinematics
-    Eigen::VectorXd qDot =  getJointVelocities(desired, current, walkState);
+    //Eigen::VectorXd qDot =  getJointVelocities(desired, current, walkState);
+    Eigen::VectorXd qDot =  getJointAccelerations(desired, current, walkState);
 
     // Set the acceleration of each joint
     for (int i = 0; i < 50; ++i) {
         mRobot->setCommand(i+6,qDot(i));
     }
 
-    // right arm
+    /*// right arm
     mRobot->setPosition(mRobot->getDof("R_SHOULDER_P")->getIndexInSkeleton(), (4)*M_PI/180 );
     mRobot->setPosition(mRobot->getDof("R_SHOULDER_R")->getIndexInSkeleton(), -8*M_PI/180  );
     mRobot->setPosition(mRobot->getDof("R_SHOULDER_Y")->getIndexInSkeleton(), 0 );
@@ -146,7 +151,7 @@ void Controller::update() {
     mRobot->setPosition(mRobot->getDof("L_SHOULDER_P")->getIndexInSkeleton(), (4)*M_PI/180  );
     mRobot->setPosition(mRobot->getDof("L_SHOULDER_R")->getIndexInSkeleton(), 8*M_PI/180  );
     mRobot->setPosition(mRobot->getDof("L_SHOULDER_Y")->getIndexInSkeleton(), 0 );
-    mRobot->setPosition(mRobot->getDof("L_ELBOW_P")->getIndexInSkeleton(), -25*M_PI/180 );
+    mRobot->setPosition(mRobot->getDof("L_ELBOW_P")->getIndexInSkeleton(), -25*M_PI/180 );*/
 
     // Arm swing
     //mRobot->setPosition(mRobot->getDof("R_SHOULDER_P")->getIndexInSkeleton(), (4+5*sin(2*M_PI*0.01*(mWorld->getSimFrames())))*M_PI/180);
@@ -247,6 +252,136 @@ Eigen::VectorXd Controller::getJointVelocities(State desired, State current, Wal
     Eigen::VectorXd qDot_des = (IK_qp_solver_ptr_->get_solution());
     
     return qDot_des.tail(50);
+}
+
+Eigen::VectorXd Controller::getJointAccelerations(State desired, State current, WalkState walkState) {
+    /*// WEIGHTS
+    double left_weight = 1;
+    double right_weight = 1;
+    double CoM_weight = 1;
+    double qddot_weight = 1e-6;
+    double base_weight = 1;
+
+    int n_dof_ = 56;
+
+    double CoM_gains_pos = 5;
+    double left_gains_pos = 5;
+    double right_gains_pos = 5;
+    double base_gains_pos = 5;
+
+    double CoM_gains_vel = 5;
+    double left_gains_vel = 5;
+    double right_gains_vel = 5;
+    double base_gains_vel = 5;*/
+    
+    // WEIGHTS
+    double left_weight = 1;
+    double right_weight = 1;
+    double CoM_weight = 1;
+    double qdot_weight = 1e-2;
+    double qddot_weight = 1e-6;
+    double base_weight = 1;
+    
+    int n_dof_ = 56;
+    
+    double CoM_gains_pos = 0.5/timeStep;
+    double left_gains_pos = 1/timeStep;
+    double right_gains_pos = 1/timeStep;
+    double base_gains_pos = 0.5/timeStep;
+
+    double CoM_gains_vel = CoM_gains_pos;
+    double left_gains_vel = left_gains_pos;
+    double right_gains_vel = right_gains_pos;
+    double base_gains_vel = base_gains_pos;
+
+    // Jacobians
+    Eigen::MatrixXd J_leftFoot, J_rightFoot, J_com, J_torso_angle;
+    J_leftFoot = mRobot->getJacobian(mLeftFoot);
+    J_rightFoot = mRobot->getJacobian(mRightFoot);
+    J_com.resize(6,56);
+    J_com << mRobot->getAngularJacobian(mTorso), mRobot->getCOMLinearJacobian();
+
+    Eigen::MatrixXd J_base = mRobot->getAngularJacobian(mBase);
+
+    // Jacobians derivatives
+    Eigen::MatrixXd Jdot_leftFoot, Jdot_rightFoot, Jdot_com, Jdot_torso_angle;
+    Jdot_leftFoot = mRobot->getJacobianClassicDeriv(mLeftFoot);
+    Jdot_rightFoot = mRobot->getJacobianClassicDeriv(mRightFoot);
+    Jdot_com.resize(6,56);
+    Jdot_com << mRobot->getAngularJacobianDeriv(mTorso), mRobot->getCOMLinearJacobianDeriv();
+
+    Eigen::MatrixXd Jdot_base = mRobot->getAngularJacobianDeriv(mBase);
+
+    // Generate cartesian error vector   
+    Eigen::VectorXd left_errorVector = desired.getLeftFootPose() - current.getLeftFootPose();
+    left_errorVector.segment(0,3) = angleSignedDistance(desired.getLeftFootPose().segment(0,3), current.getLeftFootPose().segment(0,3));
+    Eigen::VectorXd right_errorVector = desired.getRightFootPose() - current.getRightFootPose();
+    right_errorVector.segment(0,3) = angleSignedDistance(desired.getRightFootPose().segment(0,3), current.getRightFootPose().segment(0,3));
+    Eigen::VectorXd com_errorVector = desired.getComPose() - current.getComPose();
+    com_errorVector.segment(0,3) = angleSignedDistance(desired.getComPose().segment(0,3), current.getComPose().segment(0,3));
+    Eigen::VectorXd base_errorVector = angleSignedDistance(Eigen::Vector3d::Zero(), getRPY(mBase->getTransform().rotation()));
+
+    // Generate cartesian velocity error vector   
+    Eigen::VectorXd left_errorVector_vel = desired.getLeftFootVelocity() - current.getLeftFootVelocity();
+    Eigen::VectorXd right_errorVector_vel = desired.getRightFootVelocity() - current.getRightFootVelocity();
+    Eigen::VectorXd com_errorVector_vel = desired.getComVelocity() - current.getComVelocity();
+    Eigen::VectorXd base_errorVector_vel = - mBase->getCOMSpatialVelocity().head(3);;
+
+    // Get joint velocity
+    Eigen::VectorXd qDot_meas = mRobot->getVelocities();
+
+    // Cost function
+    Eigen::MatrixXd costFunctionH = qddot_weight * Eigen::MatrixXd::Identity(n_dof_, n_dof_);
+    Eigen::VectorXd costFunctionF = Eigen::VectorXd::Zero(n_dof_);
+    
+    costFunctionH += qdot_weight * timeStep * timeStep * Eigen::MatrixXd::Identity(n_dof_, n_dof_);
+    costFunctionF += qdot_weight * timeStep * qDot_meas;
+
+    costFunctionH += CoM_weight * J_com.transpose()*J_com;
+    costFunctionF += - CoM_weight * J_com.transpose() * (desired.getComAcceleration() + CoM_gains_vel*com_errorVector_vel + CoM_gains_pos*com_errorVector - Jdot_com*qDot_meas);
+
+    costFunctionH += left_weight * J_leftFoot.transpose()*J_leftFoot;
+    costFunctionF += - left_weight * J_leftFoot.transpose() * (desired.getLeftFootAcceleration() + left_gains_vel*left_errorVector_vel + left_gains_pos*left_errorVector - Jdot_leftFoot*qDot_meas);
+
+    costFunctionH += right_weight * J_rightFoot.transpose()*J_rightFoot;
+    costFunctionF += - right_weight * J_rightFoot.transpose() * (desired.getRightFootAcceleration() + right_gains_vel*right_errorVector_vel + right_gains_pos*right_errorVector - Jdot_rightFoot*qDot_meas);
+
+    costFunctionH += base_weight * J_base.transpose()*J_base;
+    costFunctionF += - base_weight * J_base.transpose() * (base_gains_vel*base_errorVector_vel + base_gains_pos*base_errorVector - Jdot_base*qDot_meas);
+
+    // input constraints
+    Eigen::MatrixXd jointLimConstrMatrix = 0*Eigen::MatrixXd::Identity(n_dof_, n_dof_);
+    Eigen::VectorXd jointLimUpperBound = 0*10 * Eigen::VectorXd::Ones(n_dof_);
+    Eigen::VectorXd jointLimLowerBound = -0*10 * Eigen::VectorXd::Ones(n_dof_);
+
+    // dummy equality constraint
+    Eigen::MatrixXd A_dummy = Eigen::MatrixXd::Zero(6,n_dof_);
+    Eigen::VectorXd b_dummy = Eigen::VectorXd::Zero(6);
+
+    if (walkState.supportFoot == Foot::LEFT) {
+        A_dummy = J_leftFoot;
+        b_dummy = - Jdot_leftFoot * qDot_meas + left_errorVector_vel / timeStep;
+    } else {
+        A_dummy = J_rightFoot;
+        b_dummy = - Jdot_rightFoot * qDot_meas + right_errorVector_vel / timeStep;
+    }
+
+    std::shared_ptr<labrob::qpsolvers::QPSolverEigenWrapper<double>> IK_qp_solver_ptr_ = std::make_shared<labrob::qpsolvers::QPSolverEigenWrapper<double>>(
+        std::make_shared<labrob::qpsolvers::HPIPMQPSolver>(n_dof_, 6, n_dof_));
+
+    IK_qp_solver_ptr_->solve(
+        costFunctionH,
+        costFunctionF,
+        A_dummy,
+        b_dummy,
+        jointLimConstrMatrix,
+        jointLimLowerBound,
+        jointLimUpperBound
+    );
+
+    Eigen::VectorXd qDdot_des = (IK_qp_solver_ptr_->get_solution()).tail(50);
+
+    return qDdot_des;
 }
 
 State Controller::getCurrentRobotState()

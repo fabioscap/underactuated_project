@@ -15,7 +15,7 @@ State ISMPC::MPC(WalkState walkState, State current) {
 
     // Loop closure
     state.com.pos = current.com.pos;
-    //state.com.vel = current.com.vel;
+    state.com.vel = 0.97*state.com.vel + 0.03*current.com.vel;
 
     // Matrices for ZMP prediction
     p = Eigen::VectorXd::Ones(N);
@@ -30,8 +30,15 @@ State ISMPC::MPC(WalkState walkState, State current) {
     AFootsteps.setZero();
 
     // Get the pose of the support foot in the world frame
-    Eigen::VectorXd supportFootPose(6); //FIXME this is the openloop pose of the support foot
-    supportFootPose << plan->getFootstepPosition(walkState.footstepCounter), 0.0, 0.0, plan->getFootstepOrientation(walkState.footstepCounter);
+    if (walkState.iter % (S+D) == 0) {
+    	if (walkState.footstepCounter == 0) {
+    	    supportFootPose << plan->getFootstepPosition(walkState.footstepCounter), 0.0, 0.0, plan->getFootstepOrientation(walkState.footstepCounter);
+        } else {
+            std::cout << "plan " << plan->getFootstepPosition(walkState.footstepCounter).transpose() << std::endl;
+            std::cout << "opti " << footstepPredicted.head(3).transpose() << std::endl;
+            supportFootPose << footstepPredicted.head(3), 0.0, 0.0, plan->getFootstepOrientation(walkState.footstepCounter);
+        }
+    }
 
     // Construct some matrices that will be used later in the cost function and constraints
     // ************************************************************************************
@@ -194,64 +201,9 @@ State ISMPC::MPC(WalkState walkState, State current) {
     state.com.pos = Eigen::Vector3d(nextStateX(0), nextStateY(0), comTargetHeight);
     state.com.vel = Eigen::Vector3d(nextStateX(1), nextStateY(1), 0.0);
     state.zmpPos = Eigen::Vector3d(nextStateX(2), nextStateY(2), 0.0);
+    state.com.acc = omega * omega * (state.com.pos - state.zmpPos);
     
     // Generate feet trajectories
-    
-    Eigen::Vector3d currentFootstep = plan->getFootstepPosition(walkState.footstepCounter);
-    Eigen::Vector3d targetFootstep = plan->getFootstepPosition(walkState.footstepCounter + 1);
-    double kStep = 0.1;
-    double kStepVert = 150;
-    double kStepVert2 = 20;
-    
-    /*if (walkState.iter % (S+D) >= S || walkState.footstepCounter == 0) {
-    	if (plan->isSupportFootLeft(walkState.footstepCounter)) {
-    	    state.leftFoot.pos.head(2) = currentFootstep.head(2);
-    	    state.leftFoot.pos(2) = groundHeight;
-    	    state.leftFoot.vel.setZero();
-    	    state.leftFoot.acc.setZero();
-    	    state.rightFoot.pos.head(2) = targetFootstep.head(2);
-    	    state.rightFoot.pos(2) = groundHeight;
-    	    state.rightFoot.vel.setZero();
-    	    state.rightFoot.acc.setZero();
-    	} else {
-    	    state.rightFoot.pos.head(2) = currentFootstep.head(2);
-    	    state.rightFoot.pos(2) = groundHeight;
-    	    state.rightFoot.vel.setZero();
-    	    state.rightFoot.acc.setZero();
-    	    state.leftFoot.pos.head(2) = targetFootstep.head(2);
-    	    state.leftFoot.pos(2) = groundHeight;
-    	    state.leftFoot.vel.setZero();
-    	    state.leftFoot.acc.setZero();
-    	}
-    } else {
-        if (plan->isSupportFootLeft(walkState.footstepCounter)) {
-            state.leftFoot.pos.head(2) = currentFootstep.head(2);
-            state.leftFoot.pos(2) = groundHeight;
-    	    state.leftFoot.vel.setZero();
-    	    state.leftFoot.acc.setZero();
-            state.rightFoot.pos += timeStep * state.rightFoot.vel;
-    	    state.rightFoot.vel += timeStep * state.rightFoot.acc;
-    	    state.rightFoot.acc.head(2) = kStep * (targetFootstep.head(2) - state.rightFoot.pos.head(2));
-    	    if(walkState.iter % (S+D) < S/2) {
-    	        state.rightFoot.acc(2) = kStepVert * (groundHeight + stepHeight - state.rightFoot.pos(2)) - kStepVert2 * state.rightFoot.vel(2);
-    	    } else {
-    	        state.rightFoot.acc(2) = kStepVert * (groundHeight - state.rightFoot.pos(2)) - kStepVert2 * state.rightFoot.vel(2);
-    	    }
-    	} else {
-    	    state.rightFoot.pos.head(2) = currentFootstep.head(2);
-    	    state.rightFoot.pos(2) = groundHeight;
-    	    state.rightFoot.vel.setZero();
-    	    state.rightFoot.acc.setZero();
-    	    state.leftFoot.pos += timeStep * state.leftFoot.vel;
-    	    state.leftFoot.vel += timeStep * state.leftFoot.acc;
-    	    state.leftFoot.acc.head(2) = kStep * (targetFootstep.head(2) - state.leftFoot.pos.head(2));
-    	    if(walkState.iter % (S+D) < S/2) {
-    	        state.leftFoot.acc(2) = kStepVert * (groundHeight + stepHeight - state.leftFoot.pos(2)) - kStepVert2 * state.leftFoot.vel(2);
-    	    } else {
-    	        state.leftFoot.acc(2) = kStepVert * (groundHeight - state.leftFoot.pos(2)) - kStepVert2 * state.leftFoot.vel(2);
-    	    }
-    	}
-    }*/
     
     Eigen::VectorXd previousFootstepPos, currentFootstepPos, nextFootstepPos, movingConstraint;
 
@@ -259,7 +211,8 @@ State ISMPC::MPC(WalkState walkState, State current) {
     else previousFootstepPos = plan->getFootstepPosition(walkState.footstepCounter - 1);
 
     currentFootstepPos = plan->getFootstepPosition(walkState.footstepCounter);
-    nextFootstepPos = plan->getFootstepPosition(walkState.footstepCounter + 1);
+    //nextFootstepPos = plan->getFootstepPosition(walkState.footstepCounter + 1);
+    nextFootstepPos = footstepPredicted.head(3);
     currentFootstepPos(2) = groundHeight;
     nextFootstepPos(2) = groundHeight;
     previousFootstepPos(2) = groundHeight;

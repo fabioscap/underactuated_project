@@ -64,7 +64,7 @@ const int doubleSupportSamples = (int)round(doubleSupportDuration/worldTimeStep)
 // IS-MPC parameters
 // *****************
 const double deltaXMax = 0.25;
-const double deltaYIn = 0.15;
+const double deltaYIn = 0.17;
 const double deltaYOut = 0.28;
 // Cost function weights
 const double qZd = 1;

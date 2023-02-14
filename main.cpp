@@ -30,8 +30,8 @@ int main(int argc, char* argv[])
 		  hrp4->getJoint(i)->setActuatorType(dart::dynamics::Joint::PASSIVE);
 	  }
 	  if(dim==1) {
-                  //hrp4->getJoint(i)->setActuatorType(dart::dynamics::Joint::ACCELERATION);
-                  hrp4->getJoint(i)->setActuatorType(dart::dynamics::Joint::VELOCITY);
+                  hrp4->getJoint(i)->setActuatorType(dart::dynamics::Joint::ACCELERATION);
+                  //hrp4->getJoint(i)->setActuatorType(dart::dynamics::Joint::VELOCITY);
 		  //hrp4->getJoint(i)->setActuatorType(dart::dynamics::Joint::FORCE);
 		  //hrp4->getJoint(i)->setForceUpperLimit(0,  forceLimit);
 		  //hrp4->getJoint(i)->setForceLowerLimit(0, -forceLimit);

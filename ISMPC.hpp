@@ -91,6 +91,7 @@ private:
     std::shared_ptr<FootstepPlan> plan;
   //***********************
 
+  Eigen::VectorXd supportFootPose = Eigen::VectorXd::Zero(6);
 
   //Logging
   Eigen::VectorXd pred_zmp;
