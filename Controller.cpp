@@ -134,11 +134,18 @@ void Controller::update() {
 
     // Compute inverse kinematics
     //Eigen::VectorXd qDot =  getJointVelocities(desired, current, walkState);
-    Eigen::VectorXd qDot =  getJointAccelerations(desired, current, walkState);
+    //Eigen::VectorXd qDot =  getJointAccelerations(desired, current, walkState);
 
-    // Set the acceleration of each joint
+    Eigen::VectorXd tau =  getJointTorques(desired, current, walkState);
+
+    /*// Set the acceleration of each joint
     for (int i = 0; i < 50; ++i) {
         mRobot->setCommand(i+6,qDot(i));
+    }*/
+
+    // Set the torque of each joint
+    for (int i = 0; i < 50; ++i) {
+        mRobot->setCommand(i+6,tau(i));
     }
 
     /*// right arm
@@ -383,6 +390,38 @@ Eigen::VectorXd Controller::getJointAccelerations(State desired, State current, 
 
     return qDdot_des;
 }
+
+Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkState walkState) {
+    Eigen::VectorXd t_des = Eigen::VectorXd::Zero(50);
+    
+    Eigen::Matrix<double, 56, 56> M = mRobot->getMassMatrix(); // 56x56
+
+    // split matrix into M_u (joints 50x50) and M_l (COM 6x6)
+    // first 6 components are realtive to floating base
+    Eigen::Matrix<double, 6, 56> M_l = M.block<6,56>(0,0);
+    // last 50 components are relative to joints
+    Eigen::Matrix<double, 50,56> M_u = M.block<50,56>(6,6);
+
+    Eigen::Matrix<double, 56, 1> N = mRobot->getCoriolisAndGravityForces();
+
+    Eigen::Matrix<double, 6, 1> N_l = N.block<6,1>(0,0);
+    Eigen::Matrix<double, 50, 1> N_u = N.block<50,1>(6,0);
+
+    // piedi's Jacobian
+    Eigen::Matrix<double, 6, 56> Jacobian_leftFoot = mRobot->getJacobian(mLeftFoot);
+    Eigen::Matrix<double, 6, 56> Jacobian_rightFoot = mRobot->getJacobian(mRightFoot);
+
+    Eigen::Matrix<double, 12,6> J_contact_l;
+    J_contact_l << Jacobian_leftFoot.block<6,6>(0,0), Jacobian_rightFoot.block<6,6>(0,0);
+
+    Eigen::Matrix<double, 6,56+12> B1;
+    B1 << M_l, -J_contact_l.transpose();
+
+    Eigen::Matrix<double, 56+12, 1> y = B1.transpose() * (B1 * B1.transpose()).inverse() * N_l;
+
+    return t_des;
+}
+
 
 State Controller::getCurrentRobotState()
 {

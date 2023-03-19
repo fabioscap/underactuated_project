@@ -26,6 +26,7 @@ public:
 
   Eigen::VectorXd getJointVelocities(State desired, State current, WalkState walkState);
   Eigen::VectorXd getJointAccelerations(State desired, State current, WalkState walkState);
+  Eigen::VectorXd getJointTorques(State desired, State current, WalkState walkState);
 
   State getCurrentRobotState();
   State getDesiredRobotState(int i);
