@@ -392,33 +392,56 @@ Eigen::VectorXd Controller::getJointAccelerations(State desired, State current, 
 }
 
 Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkState walkState) {
-    Eigen::VectorXd t_des = Eigen::VectorXd::Zero(50);
-    
-    Eigen::Matrix<double, 56, 56> M = mRobot->getMassMatrix(); // 56x56
 
+    Matrixd<56, 56> M = mRobot->getMassMatrix(); // 56x56
+    Matrixd<56,1> q_dot = mRobot->getVelocities();
     // split matrix into M_u (joints 50x50) and M_l (COM 6x6)
     // first 6 components are realtive to floating base
-    Eigen::Matrix<double, 6, 56> M_l = M.block<6,56>(0,0);
+    Matrixd<6, 56> M_l = M.block<6,56>(0,0);
     // last 50 components are relative to joints
-    Eigen::Matrix<double, 50,56> M_u = M.block<50,56>(6,6);
+    Matrixd<50,56> M_u = M.block<50,56>(6,0);
 
-    Eigen::Matrix<double, 56, 1> N = mRobot->getCoriolisAndGravityForces();
+    Matrixd<56, 1> N = mRobot->getCoriolisAndGravityForces();
 
-    Eigen::Matrix<double, 6, 1> N_l = N.block<6,1>(0,0);
-    Eigen::Matrix<double, 50, 1> N_u = N.block<50,1>(6,0);
+    Matrixd<6, 1> N_l = N.block<6,1>(0,0);
+    Matrixd<50, 1> N_u = N.block<50,1>(6,0);
 
     // piedi's Jacobian
-    Eigen::Matrix<double, 6, 56> Jacobian_leftFoot = mRobot->getJacobian(mLeftFoot);
-    Eigen::Matrix<double, 6, 56> Jacobian_rightFoot = mRobot->getJacobian(mRightFoot);
+    Matrixd<6, 56> J_leftFoot = mRobot->getJacobian(mLeftFoot);
+    Matrixd<6, 56> J_rightFoot = mRobot->getJacobian(mRightFoot);
+    Matrixd<6, 56> Jdot_leftFoot = mRobot->getJacobianClassicDeriv(mLeftFoot);
+    Matrixd<6, 56> Jdot_rightFoot = mRobot->getJacobianClassicDeriv(mRightFoot);
 
-    Eigen::Matrix<double, 12,6> J_contact_l;
-    J_contact_l << Jacobian_leftFoot.block<6,6>(0,0), Jacobian_rightFoot.block<6,6>(0,0);
+    Matrixd<12,56> J_contact;
+    J_contact << J_leftFoot, J_rightFoot;
+    Matrixd<12,56> Jdot_contact;
+    Jdot_contact << Jdot_leftFoot, Jdot_rightFoot;
 
-    Eigen::Matrix<double, 6,56+12> B1;
+    Matrixd<12,6> J_contact_l;
+    J_contact_l << J_leftFoot.block<6,6>(0,0), J_rightFoot.block<6,6>(0,0);
+
+    // highest priority task: Newton dynamics
+
+    Matrixd<6,56+12> B1;
     B1 << M_l, -J_contact_l.transpose();
 
-    Eigen::Matrix<double, 56+12, 1> y = B1.transpose() * (B1 * B1.transpose()).inverse() * N_l;
+    Matrixd<56+12, 1> y = - B1.transpose() * (B1 * B1.transpose()).inverse() * N_l;
 
+    Matrixd<56+12, 56+12-6> Z = B1.fullPivLu().kernel();
+
+    // priority 2: contact constraints
+    // the feet do not move
+    Matrixd<12,56+12> B2;
+    B2 << J_contact, Matrixd<12,12>::Zero();
+    Matrixd<12,1 > b2 = Jdot_contact*q_dot;
+
+    Matrixd<62,1> u = - (B2*Z).transpose() * ((B2*Z) * (B2*Z).transpose()).inverse() * (b2 + B2*y);
+
+
+    Matrixd<56+12,1> adriano = (y + Z*u);
+
+    Matrixd<50,1> t_des = M_u * adriano.head(56) + N_u - (J_contact.transpose()*adriano.tail(12)).tail(50);
+    
     return t_des;
 }
 
@@ -462,7 +485,9 @@ Eigen::Vector3d Controller::getZmpFromExternalForces()
 
     Eigen::Vector3d left_cop;
     if(abs(mLeftFoot->getConstraintImpulse()[5]) > 0.01){
-        left_cop << -mLeftFoot->getConstraintImpulse()(1)/mLeftFoot->getConstraintImpulse()(5), mLeftFoot->getConstraintImpulse()(0)/mLeftFoot->getConstraintImpulse()(5), 0.0;
+        left_cop << -mLeftFoot->getConstraintImpulse()(1)/mLeftFoot->getConstraintImpulse()(5), 
+                     mLeftFoot->getConstraintImpulse()(0)/mLeftFoot->getConstraintImpulse()(5), 
+                     0.0;
         Eigen::Matrix3d iRotation = mLeftFoot->getWorldTransform().rotation();
         Eigen::Vector3d iTransl   = mLeftFoot->getWorldTransform().translation();
         left_cop = iTransl + iRotation*left_cop;
