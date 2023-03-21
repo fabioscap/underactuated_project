@@ -233,3 +233,9 @@ inline double cubic(double t) {return -2*t*t*t + 3*t*t;}
 inline double cubic_dot(double t) {return -6*t*t + 6*t;}
 inline double cubic_ddot(double t) {return -12*t + 6;}
 
+
+inline Eigen::Matrix<double, 3, 3> skew( const Eigen::Matrix<double, 3, 1> & vec) {
+  return (Eigen::Matrix<double, 3, 3>() << 0.0, -vec[2], vec[1],
+                                           vec[2], 0.0, -vec[0], 
+                                           -vec[1], vec[0], 0.0).finished();
+}

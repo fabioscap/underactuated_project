@@ -5,6 +5,8 @@ Controller::Controller(dart::dynamics::SkeletonPtr _robot, dart::simulation::Wor
 {
     setInitialConfiguration();
 
+    initial_com = mRobot->getCOM();
+
     // Some useful pointers to robot limbs
     mLeftFoot = mRobot->getBodyNode("l_sole");
     mRightFoot = mRobot->getBodyNode("r_sole");
@@ -393,9 +395,16 @@ Eigen::VectorXd Controller::getJointAccelerations(State desired, State current, 
 
 Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkState walkState) {
 
+    // com
+    Matrixd<3,1> COM = mRobot->getCOM();
+    double m = mRobot->getMass();
+
     Matrixd<56, 56> M = mRobot->getMassMatrix(); // 56x56
     Matrixd<56,1> q_dot = mRobot->getVelocities();
-    // split matrix into M_u (joints 50x50) and M_l (COM 6x6)
+
+    // lina
+
+    // split matrix into M_u (joints 50x56) and M_l (COM 6x56)
     // first 6 components are realtive to floating base
     Matrixd<6, 56> M_l = M.block<6,56>(0,0);
     // last 50 components are relative to joints
@@ -406,11 +415,20 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     Matrixd<6, 1> N_l = N.block<6,1>(0,0);
     Matrixd<50, 1> N_u = N.block<50,1>(6,0);
 
-    // piedi's Jacobian
+    /* piedi's Jacobian */
     Matrixd<6, 56> J_leftFoot = mRobot->getJacobian(mLeftFoot);
     Matrixd<6, 56> J_rightFoot = mRobot->getJacobian(mRightFoot);
     Matrixd<6, 56> Jdot_leftFoot = mRobot->getJacobianClassicDeriv(mLeftFoot);
     Matrixd<6, 56> Jdot_rightFoot = mRobot->getJacobianClassicDeriv(mRightFoot);
+
+    // angular then linear
+    Matrixd<6, 1> leftFoot_pose = current.getLeftFootPose();
+    Matrixd<6, 1> rightFoot_pose = current.getRightFootPose();
+    Matrixd<6, 1> leftFoot_velocity = current.getLeftFootVelocity();
+    Matrixd<6, 1> rightFoot_velocity = current.getRightFootVelocity();
+    
+    Matrixd<12, 1> feet_velocities;
+    feet_velocities << leftFoot_velocity, rightFoot_velocity ;
 
     Matrixd<12,56> J_contact;
     J_contact << J_leftFoot, J_rightFoot;
@@ -420,28 +438,51 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     Matrixd<12,6> J_contact_l;
     J_contact_l << J_leftFoot.block<6,6>(0,0), J_rightFoot.block<6,6>(0,0);
 
-    // highest priority task: Newton dynamics
+    Matrixd<12,50> J_contact_u;
+    J_contact_u << J_leftFoot.block<6,50>(0,6), J_rightFoot.block<6,50>(0,6);
 
+    // highest priority task: Newton dynamics
     Matrixd<6,56+12> B1;
     B1 << M_l, -J_contact_l.transpose();
-
-    Matrixd<56+12, 1> y = - B1.transpose() * (B1 * B1.transpose()).inverse() * N_l;
-
-    Matrixd<56+12, 56+12-6> Z = B1.fullPivLu().kernel();
+    Matrixd<56+12, 1> y1 = - B1.transpose() * (B1 * B1.transpose()).inverse() * N_l;
+    Matrixd<56+12, 56+12-6> Z1 = B1.fullPivLu().kernel();
 
     // priority 2: contact constraints
     // the feet do not move
+    // add left_errorVector_vel / timeStep;
+    
     Matrixd<12,56+12> B2;
     B2 << J_contact, Matrixd<12,12>::Zero();
-    Matrixd<12,1 > b2 = Jdot_contact*q_dot;
 
-    Matrixd<62,1> u = - (B2*Z).transpose() * ((B2*Z) * (B2*Z).transpose()).inverse() * (b2 + B2*y);
+    Matrixd<12, 1> b2 = Jdot_contact*q_dot - (1/timeStep)*(Matrixd<12,1>::Zero() - feet_velocities);
 
+    Matrixd<12, 56+12-6> B2_hat = B2*Z1;
+    Matrixd<12, 1>       b2_hat = b2 + B2*y1;
 
-    Matrixd<56+12,1> adriano = (y + Z*u);
-
-    Matrixd<50,1> t_des = M_u * adriano.head(56) + N_u - (J_contact.transpose()*adriano.tail(12)).tail(50);
+    Matrixd<56+12-6, 1> u2 = - B2_hat.transpose() * (B2_hat* B2_hat.transpose()).inverse() * b2_hat;
+    Matrixd<56+12, 1> y2 = y1 + Z1*u2; 
     
+
+    //Matrixd<50, 1> t_des = Matrixd<50,1>::Zero();
+    Matrixd<50, 1> t_des = M_u*y2.head(56) + N_u - J_contact_u.transpose()*y2.tail(12);
+
+    double K_p = 1.0;
+    double K_d = 1.0;
+
+    Matrixd<6, 6+6> T;
+    // linear part
+    T.block<3, 6+6>(3,0) << Eigen::Matrix3d::Identity() , Eigen::Matrix3d::Zero() , 
+                             Eigen::Matrix3d::Identity() , Eigen::Matrix3d::Zero() ;
+    // angular part
+    T.block<3, 6+6>(0,0) << skew(leftFoot_pose.tail(3) - COM), Eigen::Matrix3d::Identity(),
+                            skew(rightFoot_pose.tail(3)- COM), Eigen::Matrix3d::Identity();  
+    Matrixd<6,56+12> B3;
+    B3 << Matrixd<6,56>::Zero(), T;
+    // TODO check gravity direction
+    Matrixd<6, 1> b3 = (Eigen::Vector6d() << 0, 0, 0, 0, 0, -m*9.81).finished()
+                      -K_p*(Eigen::Vector6d() << Eigen::Vector3d::Zero(), initial_com-COM).finished() 
+                      -K_d*(Eigen::Vector6d::Zero()-);
+
     return t_des;
 }
 

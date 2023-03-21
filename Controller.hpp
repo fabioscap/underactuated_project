@@ -61,6 +61,8 @@ private:
   
   std::unique_ptr<ISMPC> ismpc;
 
+  Eigen::Vector3d initial_com;
+
 public:
 
 };
