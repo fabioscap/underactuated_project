@@ -4,6 +4,9 @@
 #include "utils.cpp"
 #include <vector>
 
+template <int rows, int cols>
+using Matrixd = Eigen::Matrix<double, rows, cols>;
+
 struct endEffector {
     Eigen::Vector3d pos, vel, acc, ang_pos, ang_vel, ang_acc;
 };
