@@ -1,4 +1,5 @@
 #include "Controller.hpp"
+#include "task.hpp"
 
 Controller::Controller(dart::dynamics::SkeletonPtr _robot, dart::simulation::WorldPtr _world)
 	: mRobot(_robot), mWorld(_world)
@@ -181,7 +182,7 @@ void Controller::update() {
     ++walkState.iter;
     walkState.footstepCounter = walkState.iter / (S + D);
 }
-
+/*
 Eigen::VectorXd Controller::getJointVelocities(State desired, State current, WalkState walkState) {
 
     // WEIGHTS
@@ -264,24 +265,6 @@ Eigen::VectorXd Controller::getJointVelocities(State desired, State current, Wal
 }
 
 Eigen::VectorXd Controller::getJointAccelerations(State desired, State current, WalkState walkState) {
-    /*// WEIGHTS
-    double left_weight = 1;
-    double right_weight = 1;
-    double CoM_weight = 1;
-    double qddot_weight = 1e-6;
-    double base_weight = 1;
-
-    int n_dof_ = 56;
-
-    double CoM_gains_pos = 5;
-    double left_gains_pos = 5;
-    double right_gains_pos = 5;
-    double base_gains_pos = 5;
-
-    double CoM_gains_vel = 5;
-    double left_gains_vel = 5;
-    double right_gains_vel = 5;
-    double base_gains_vel = 5;*/
     
     // WEIGHTS
     double left_weight = 1;
@@ -392,7 +375,7 @@ Eigen::VectorXd Controller::getJointAccelerations(State desired, State current, 
 
     return qDdot_des;
 }
-
+*/
 Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkState walkState) {
 
     // com
@@ -441,49 +424,28 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     Matrixd<12,50> J_contact_u;
     J_contact_u << J_leftFoot.block<6,50>(0,6), J_rightFoot.block<6,50>(0,6);
 
-    // highest priority task: Newton dynamics
-    Matrixd<6,56+12> B1;
-    B1 << M_l, -J_contact_l.transpose();
-    Matrixd<56+12, 1> y1 = - B1.transpose() * (B1 * B1.transpose()).inverse() * N_l;
-    Matrixd<56+12, 56+12-6> Z1 = B1.fullPivLu().kernel();
 
+    hrc::HierarchicalSolver<56+12> solver = hrc::HierarchicalSolver<56+12>();
+
+    // highest priority task: Newton dynamics
+    Eigen::Matrix<double,6,56+12> B1;
+    B1 << M_l, -J_contact_l.transpose();
+
+    solver.add_eq_constr(B1, N_l,0);
+    
     // priority 2: contact constraints
     // the feet do not move
     // add left_errorVector_vel / timeStep;
-    
     Matrixd<12,56+12> B2;
     B2 << J_contact, Matrixd<12,12>::Zero();
-
     Matrixd<12, 1> b2 = Jdot_contact*q_dot - (1/timeStep)*(Matrixd<12,1>::Zero() - feet_velocities);
 
-    Matrixd<12, 56+12-6> B2_hat = B2*Z1;
-    Matrixd<12, 1>       b2_hat = b2 + B2*y1;
+    solver.add_eq_constr(B2, b2, 1);
 
-    Matrixd<56+12-6, 1> u2 = - B2_hat.transpose() * (B2_hat* B2_hat.transpose()).inverse() * b2_hat;
-    Matrixd<56+12, 1> y2 = y1 + Z1*u2; 
-    
-
-    //Matrixd<50, 1> t_des = Matrixd<50,1>::Zero();
-    Matrixd<50, 1> t_des = M_u*y2.head(56) + N_u - J_contact_u.transpose()*y2.tail(12);
-
-    double K_p = 1.0;
-    double K_d = 1.0;
-
-    Matrixd<6, 6+6> T;
-    // linear part
-    T.block<3, 6+6>(3,0) << Eigen::Matrix3d::Identity() , Eigen::Matrix3d::Zero() , 
-                             Eigen::Matrix3d::Identity() , Eigen::Matrix3d::Zero() ;
-    // angular part
-    T.block<3, 6+6>(0,0) << skew(leftFoot_pose.tail(3) - COM), Eigen::Matrix3d::Identity(),
-                            skew(rightFoot_pose.tail(3)- COM), Eigen::Matrix3d::Identity();  
-    Matrixd<6,56+12> B3;
-    B3 << Matrixd<6,56>::Zero(), T;
-    // TODO check gravity direction
-    Matrixd<6, 1> b3 = (Eigen::Vector6d() << 0, 0, 0, 0, 0, -m*9.81).finished()
-                      -K_p*(Eigen::Vector6d() << Eigen::Vector3d::Zero(), initial_com-COM).finished() 
-                      -K_d*(Eigen::Vector6d::Zero()-);
-
+    Matrixd<56+12, 1> y_mine = solver.solve();
+    Matrixd<50, 1> t_des = M_u*y_mine.head(56) + N_u - J_contact_u.transpose()*y_mine.tail(12);
     return t_des;
+    
 }
 
 

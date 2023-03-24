@@ -239,3 +239,7 @@ inline Eigen::Matrix<double, 3, 3> skew( const Eigen::Matrix<double, 3, 1> & vec
                                            vec[2], 0.0, -vec[0], 
                                            -vec[1], vec[0], 0.0).finished();
 }
+
+inline void print_shape(std::string s, const Eigen::MatrixXd& m) {
+	std::cout << s << " " << m.rows() << " "<< m.cols() << std::endl;
+}

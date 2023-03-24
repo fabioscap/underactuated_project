@@ -11,9 +11,6 @@
 #include <labrob_qpsolvers/qpsolvers.hpp>
 #include "ISMPC.hpp"
 
-template <int rows, int cols>
-using Matrixd = Eigen::Matrix<double, rows, cols>;
-
 class Controller
 {
 public:
