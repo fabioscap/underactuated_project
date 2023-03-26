@@ -120,7 +120,7 @@ void Controller::update() {
     
     
     // This adds a push to the robot
-    if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,100,0));
+    //if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,100,0));
 
     // Retrieve current and desired state
     current = getCurrentRobotState();
@@ -441,6 +441,32 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     Matrixd<12, 1> b2 = Jdot_contact*q_dot - (1/timeStep)*(Matrixd<12,1>::Zero() - feet_velocities);
 
     solver.add_eq_constr(B2, b2, 1);
+
+    // COM frame is aligned as world frame
+    Matrixd<6,6> Phi1 = Matrixd<6,6>::Zero();
+    auto R01 = mBase->getTransform().rotation();
+    Phi1.block<3,3>(0,0) = R01;
+    Phi1.block<3,3>(3,3) = R01;
+
+    Matrixd<6,6> X1Gt = Matrixd<6,6>::Zero();
+    X1Gt.block<3,3>(0,0) = R01;
+    X1Gt.block<3,3>(3,3) = R01;
+    X1Gt.block<3,3>(0,3) = -R01*skew(mRobot->getCOM(mBase));
+
+
+    Matrixd<6,56> Ag    = X1Gt*Phi1*M_l;
+    //print_shape("coriolis", mRobot->getCoriolisForces().block<6,1>(0,0));
+    Matrixd<6,1> Agdqd = X1Gt*Phi1*((mRobot->getCoriolisForces()).block<6,1>(0,0));
+
+
+    double K_p = 100; double K_d=10;
+    Matrixd<6,56+12> B3 ;
+    B3<< Ag, Matrixd<6,12>::Zero();
+
+    Matrixd<6,1>   b3 = Agdqd -K_p*((Eigen::Vector6d()<<Eigen::Vector3d::Zero(), initial_com - COM).finished())
+                              -K_d*((Eigen::Vector6d::Zero()-Ag*q_dot)); // - FFW
+
+    solver.add_eq_constr(B3,b3,2);
 
     Matrixd<56+12, 1> y_mine = solver.solve();
     Matrixd<50, 1> t_des = M_u*y_mine.head(56) + N_u - J_contact_u.transpose()*y_mine.tail(12);

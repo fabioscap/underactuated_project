@@ -26,9 +26,8 @@ namespace hrc {
                const Eigen::MatrixXd& projector,
                Eigen::MatrixXd& new_solution,
                Eigen::MatrixXd& new_projector){
-      if (n_eqs == 0) {std::cout<< "no tasks!\n";new_solution=solution;new_projector=projector;return;}
+      if (n_eqs == 0) {new_solution=solution;new_projector=projector;return;}
       if (1==1) { // pinv
-        std::cout << "tasks!\n";
         //print_shape("previous level projector", projector);
         //print_shape("previous solution", solution);
         Eigen::MatrixXd B = Eigen::MatrixXd::Zero(n_eqs, projector.cols());
@@ -49,8 +48,8 @@ namespace hrc {
           b.block(n,0,b_.rows(), b_.cols()) = b_+ B_*solution;
           ++it_B; ++it_b; n+= B_.rows();
         }
-        std::cout << "b " << b.transpose() << std::endl;
-        std::cout << "solving"<< std::endl;
+        // std::cout << "b " << b.transpose() << std::endl;
+        // std::cout << "solving"<< std::endl;
         new_solution = solution + projector*(- B.transpose() * (B * B.transpose()).inverse() * b); //
 
         //print_shape("u", (- B.transpose() * (B * B.transpose()).inverse() * b)); 
@@ -91,7 +90,7 @@ namespace hrc {
     Eigen::MatrixXd _solve(const Eigen::MatrixXd& prev_projector,
                            const Eigen::MatrixXd& prev_solution,
                            int current_priority) {
-      std::cout << current_priority << "\n";
+      // std::cout << current_priority << "\n";
       PriorityGroup<n_vars> group = groups.at(current_priority);
 
       Eigen::MatrixXd solution;

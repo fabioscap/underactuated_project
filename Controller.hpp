@@ -59,6 +59,7 @@ private:
   std::unique_ptr<ISMPC> ismpc;
 
   Eigen::Vector3d initial_com;
+  static constexpr int N_links = 66;
 
 public:
 
