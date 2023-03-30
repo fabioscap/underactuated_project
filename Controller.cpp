@@ -468,10 +468,28 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
 
     solver.add_eq_constr(B3,b3,2);
 
+    // lower priority: keep a certain joint configuration: avoid null space movements
+    double Kp_j = 1.0;
+    double Kd_j = 0.0;
+
+
+    // B4 y + b4 = 0
+    Matrixd<50,56+12> B4 = Matrixd<50,56+12>::Zero();
+    B4.block(0,6,50,50) = Eigen::Matrix<double,50,50>::Identity();
+    Matrixd<50,1>  b4 = -Kp_j*(initialConfiguration.tail(50)-mRobot->getPositions().tail(50))+Kd_j*q_dot.tail(50);
+    
+    // plot reaction forces
+    // plot torso error
+
+    solver.add_eq_constr(B3,b3,3);
     Matrixd<56+12, 1> y_mine = solver.solve();
+
+    // std::cout << y_mine.tail(12).transpose() << "\n";
+
     Matrixd<50, 1> t_des = M_u*y_mine.head(56) + N_u - J_contact_u.transpose()*y_mine.tail(12);
     return t_des;
-    
+    //return y_mine.head(56).tail(50);
+
 }
 
 

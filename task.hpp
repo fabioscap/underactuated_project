@@ -50,9 +50,13 @@ namespace hrc {
         }
         // std::cout << "b " << b.transpose() << std::endl;
         // std::cout << "solving"<< std::endl;
-        new_solution = solution + projector*(- B.transpose() * (B * B.transpose()).inverse() * b); //
+        double damping = 10e-3;
+        new_solution = solution + projector*
+                        (- B.transpose() * (B * B.transpose() + damping*Eigen::MatrixXd::Identity(B.rows(),B.rows())).inverse() * b); //
 
         //print_shape("u", (- B.transpose() * (B * B.transpose()).inverse() * b)); 
+        std::cout << "BB' determinant: " << (B * B.transpose() + damping*Eigen::MatrixXd::Identity(B.rows(),B.rows())).determinant() <<"\n" ;
+        // std::cout<< (- B.transpose() * (B * B.transpose()).inverse() * b).transpose() << std::endl;
         // find null space
         Eigen::BDCSVD<Eigen::MatrixXd> svd(B, Eigen::ComputeFullV);
         new_projector = projector * svd.matrixV().rightCols(B.cols() - svd.rank());
@@ -70,7 +74,7 @@ namespace hrc {
 
   template <int _n_vars>
   struct HierarchicalSolver {
-    static constexpr int max_priority_levels = 3;
+    static constexpr int max_priority_levels = 4;
     static constexpr int n_vars = _n_vars;
 
     template <int n_constraints>
@@ -90,24 +94,23 @@ namespace hrc {
     Eigen::MatrixXd _solve(const Eigen::MatrixXd& prev_projector,
                            const Eigen::MatrixXd& prev_solution,
                            int current_priority) {
-      // std::cout << current_priority << "\n";
+      std::cout << "priority: "<< current_priority << "\n";
       PriorityGroup<n_vars> group = groups.at(current_priority);
 
       Eigen::MatrixXd solution;
       Eigen::MatrixXd projector;
 
       group.solve(prev_solution, prev_projector, solution, projector);
-
+      // std::cout << solution.transpose() << "\n";
       // last priority: no tasks further down
-      if (current_priority+1 == max_priority_levels) return solution;
+      if (current_priority == max_priority_levels) return solution;
       
       else {
-      auto x = _solve(projector, solution, current_priority+1 );
-      return x;
+      return _solve(projector, solution, current_priority+1 );
       }
     }
 
-    std::array<PriorityGroup<_n_vars>,max_priority_levels> groups;
+    std::array<PriorityGroup<_n_vars>,max_priority_levels+1> groups;
 
   };
 
