@@ -432,6 +432,7 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     B1 << M_l, -J_contact_l.transpose();
 
     solver.add_eq_constr(B1, N_l,0);
+    solver.set_solve_type(0, hrc::solve_type::QP);
     
     // priority 2: contact constraints
     // the feet do not move
@@ -459,7 +460,7 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     Matrixd<6,1> Agdqd = X1Gt*Phi1*((mRobot->getCoriolisForces()).block<6,1>(0,0));
 
 
-    double K_p = 100; double K_d=10;
+    double K_p = 500; double K_d=100;
     Matrixd<6,56+12> B3 ;
     B3<< Ag, Matrixd<6,12>::Zero();
 
@@ -481,7 +482,7 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     // plot reaction forces
     // plot torso error
 
-    solver.add_eq_constr(B3,b3,3);
+    //solver.add_eq_constr(B3,b3,3);
     Matrixd<56+12, 1> y_mine = solver.solve();
 
     // std::cout << y_mine.tail(12).transpose() << "\n";
