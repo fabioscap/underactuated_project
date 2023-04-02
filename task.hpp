@@ -15,7 +15,7 @@ namespace hrc {
   struct PriorityGroup {
     static constexpr int n_vars = _n_vars;
 
-    PriorityGroup(): n_eqs(0), n_ineqs(0), s(solve_type::Pinv){}
+    PriorityGroup(): n_eqs(0), n_ineqs(0), s(solve_type::QP){}
 
     template <int n_constraints>
     void add_eq_constr(const Eigen::Matrix<double, n_constraints, n_vars>& A,
@@ -32,14 +32,14 @@ namespace hrc {
       if (n_eqs == 0) {new_solution=solution;new_projector=projector;return;}
 
         Eigen::MatrixXd B = Eigen::MatrixXd::Zero(n_eqs, projector.cols());
-        Eigen::MatrixXd b = Eigen::MatrixXd::Zero(n_eqs, 1);
+        Eigen::VectorXd b = Eigen::VectorXd::Zero(n_eqs, 1);
 
         auto it_B = B_vec.begin();
         auto it_b = b_vec.begin();
         int n = 0;
         while (it_B != B_vec.end()) {
           Eigen::MatrixXd B_ = *(*it_B).get();
-          Eigen::MatrixXd b_ = *(*it_b).get();
+          Eigen::VectorXd b_ = *(*it_b).get();
           
           //print_shape("B_",B_);
           //print_shape("b_",b_);
@@ -53,46 +53,55 @@ namespace hrc {
         // std::cout << "solving"<< std::endl;
         Eigen::VectorXd u;
         if (s == solve_type::Pinv) { 
-          double damping = 0;
+          double damping = 0*1e-18;
           u = (- B.transpose() * (B * B.transpose() + damping*Eigen::MatrixXd::Identity(B.rows(),B.rows())).inverse() * b);
         } else {
-        // create a QP solver pointer
-        //std::shared_ptr<labrob::qpsolvers::QPSolverEigenWrapper<double>> IK_qp_solver_ptr_ = std::make_shared<labrob::qpsolvers::QPSolverEigenWrapper<double>>(
-        //std::make_shared<labrob::qpsolvers::HPIPMQPSolver>(n_vars, 1, 1));
 
         // create cost function
-        Eigen::MatrixXd H = projector.transpose()*B.transpose()*B*projector;
-        Eigen::VectorXd F = 2 * projector.transpose()*B.transpose()*(b+B*solution);
+        print_shape("proj",projector);
+        print_shape("B", B);
+        print_shape("b", b);
+        print_shape("sol", solution);
+        Eigen::MatrixXd H = 1e-6 * Eigen::MatrixXd::Identity(projector.cols(), projector.cols());;
+        Eigen::VectorXd F = (2 * B.transpose()*b);
+
+        //Eigen::VectorXd F = 2 * (b+B*solution).transpose()*B*projector;
+        //H = H.setZero();
+        F = F.setZero();
 
         // input constraints
-        Eigen::MatrixXd jointLimConstrMatrix = 0*Eigen::MatrixXd::Identity(n_vars, n_vars);
-        Eigen::VectorXd jointLimUpperBound = 0*10 * Eigen::VectorXd::Ones(n_vars);
-        Eigen::VectorXd jointLimLowerBound = -0*10 * Eigen::VectorXd::Ones(n_vars);
+        Eigen::MatrixXd jointLimConstrMatrix = 0*Eigen::MatrixXd::Identity(projector.cols(), projector.cols());
+        Eigen::VectorXd jointLimUpperBound = 0*10 * Eigen::VectorXd::Ones(projector.cols());
+        Eigen::VectorXd jointLimLowerBound = -0*10 * Eigen::VectorXd::Ones(projector.cols());
         
         // dummy equality constraint
-        Eigen::MatrixXd A_dummy = Eigen::MatrixXd::Zero(1,n_vars);
-        Eigen::VectorXd b_dummy = Eigen::VectorXd::Zero(1);
-      
+        Eigen::MatrixXd A_dummy = B;
+        Eigen::VectorXd b_dummy = -b;
+        //Eigen::MatrixXd A_dummy = Eigen::MatrixXd::Zero(1,n_vars);
+        //Eigen::VectorXd b_dummy = Eigen::VectorXd::Zero(1);
 
         std::shared_ptr<labrob::qpsolvers::QPSolverEigenWrapper<double>> IK_qp_solver_ptr_ = std::make_shared<labrob::qpsolvers::QPSolverEigenWrapper<double>>(
-            std::make_shared<labrob::qpsolvers::HPIPMQPSolver>(n_vars, 1, n_vars));
+            std::make_shared<labrob::qpsolvers::HPIPMQPSolver>(projector.cols(), B.rows(), projector.cols()));
 
         IK_qp_solver_ptr_->solve(
             H,
             F,
             A_dummy,
             b_dummy,
-            jointLimConstrMatrix,
-            jointLimLowerBound,
-            jointLimUpperBound
+            jointLimConstrMatrix, // C
+            jointLimLowerBound,   // l
+            jointLimUpperBound    // u
+            // C >= l
+            // C <= u
         );
         u = (IK_qp_solver_ptr_->get_solution());
-
+        std::cout << u.transpose() << "\n";
       }
       new_solution = solution + projector*u; //
       // find null space
       Eigen::BDCSVD<Eigen::MatrixXd> svd(B, Eigen::ComputeFullV);
       new_projector = projector * svd.matrixV().rightCols(B.cols() - svd.rank());
+      std::cout << "next priority space: " << new_projector.cols()<<"\n";
     }
 
     void set_solve_type(solve_type st){
@@ -137,13 +146,8 @@ namespace hrc {
     Eigen::MatrixXd _solve(const Eigen::MatrixXd& prev_projector,
                            const Eigen::MatrixXd& prev_solution,
                            int current_priority) {
-      std::cout << "priority: "<< current_priority << " ";
+      std::cout << "priority: "<< current_priority << "\n";
       PriorityGroup<n_vars> &group = groups.at(current_priority);
-
-      if (group.s == solve_type::Pinv) 
-        std::cout << "PINV\n";
-      else
-        std::cout << "QP\n";
 
       Eigen::MatrixXd solution;
       Eigen::MatrixXd projector;
@@ -160,17 +164,8 @@ namespace hrc {
 
     void set_solve_type(int priority, solve_type s) {
       PriorityGroup<n_vars> &group = groups.at(priority);
-      std::cout << "before...";
-      if (group.s == solve_type::Pinv) 
-        std::cout << "PINV\n";
-      else
-        std::cout << "QP\n";
       group.set_solve_type(s);
-      std::cout << "after...";
-      if (group.s == solve_type::Pinv) 
-        std::cout << "PINV\n";
-      else
-        std::cout << "QP\n";
+
     }
 
     std::array<PriorityGroup<_n_vars>,max_priority_levels+1> groups;

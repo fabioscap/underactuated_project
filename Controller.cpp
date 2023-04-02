@@ -432,9 +432,8 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     B1 << M_l, -J_contact_l.transpose();
 
     solver.add_eq_constr(B1, N_l,0);
-    solver.set_solve_type(0, hrc::solve_type::QP);
-    
-    // priority 2: contact constraints
+    solver.set_solve_type(0, hrc::solve_type::Pinv);    
+
     // the feet do not move
     // add left_errorVector_vel / timeStep;
     Matrixd<12,56+12> B2;
@@ -460,7 +459,7 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     Matrixd<6,1> Agdqd = X1Gt*Phi1*((mRobot->getCoriolisForces()).block<6,1>(0,0));
 
 
-    double K_p = 500; double K_d=100;
+    double K_p = 100; double K_d=10;
     Matrixd<6,56+12> B3 ;
     B3<< Ag, Matrixd<6,12>::Zero();
 
@@ -470,22 +469,20 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     solver.add_eq_constr(B3,b3,2);
 
     // lower priority: keep a certain joint configuration: avoid null space movements
-    double Kp_j = 1.0;
-    double Kd_j = 0.0;
+    double Kp_j = 0.0;
+    double Kd_j = 10.0;
 
 
     // B4 y + b4 = 0
-    Matrixd<50,56+12> B4 = Matrixd<50,56+12>::Zero();
-    B4.block(0,6,50,50) = Eigen::Matrix<double,50,50>::Identity();
-    Matrixd<50,1>  b4 = -Kp_j*(initialConfiguration.tail(50)-mRobot->getPositions().tail(50))+Kd_j*q_dot.tail(50);
+    Matrixd<56,56+12> B4 = Matrixd<56,56+12>::Zero();
+    B4.block(0,0,56,56) = Eigen::Matrix<double,56,56>::Identity();
+    Matrixd<56,1>  b4 = -Kp_j*(initialConfiguration.tail(56)-mRobot->getPositions().tail(56))+Kd_j*q_dot.tail(56);
     
     // plot reaction forces
     // plot torso error
 
-    //solver.add_eq_constr(B3,b3,3);
+    solver.add_eq_constr(B4,b4,3);
     Matrixd<56+12, 1> y_mine = solver.solve();
-
-    // std::cout << y_mine.tail(12).transpose() << "\n";
 
     Matrixd<50, 1> t_des = M_u*y_mine.head(56) + N_u - J_contact_u.transpose()*y_mine.tail(12);
     return t_des;
