@@ -10,6 +10,7 @@
 #include "computeReferenceTrajectory.hpp"
 #include <labrob_qpsolvers/qpsolvers.hpp>
 #include "ISMPC.hpp"
+#include <fstream>
 
 class Controller
 {
@@ -60,7 +61,7 @@ private:
 
   Eigen::Vector3d initial_com;
   static constexpr int N_links = 66;
-
+  std::ofstream solution_file,error_file,init_conf_file;
 public:
 
 };

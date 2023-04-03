@@ -28,7 +28,10 @@ namespace hrc {
     void solve(const Eigen::MatrixXd& solution,
                const Eigen::MatrixXd& projector,
                Eigen::MatrixXd& new_solution,
-               Eigen::MatrixXd& new_projector){
+               Eigen::MatrixXd& new_projector,
+               Eigen::MatrixXd& q_ref,
+               Eigen::MatrixXd& q_meas,
+               Eigen::MatrixXd& q_dot){
       if (n_eqs == 0) {new_solution=solution;new_projector=projector;return;}
 
         Eigen::MatrixXd B = Eigen::MatrixXd::Zero(n_eqs, projector.cols());
@@ -62,26 +65,38 @@ namespace hrc {
         print_shape("B", B);
         print_shape("b", b);
         print_shape("sol", solution);
-        Eigen::MatrixXd H = 1e-6 * Eigen::MatrixXd::Identity(projector.cols(), projector.cols());;
-        Eigen::VectorXd F = (2 * B.transpose()*b);
+        //Eigen::MatrixXd H = 1e-6 * Eigen::MatrixXd::Identity(projector.cols(), projector.cols());;
+        
+        //Eigen::MatrixXd H = B.transpose()*B;
 
-        //Eigen::VectorXd F = 2 * (b+B*solution).transpose()*B*projector;
+        Eigen::VectorXd F = Eigen::VectorXd::Zero(n_vars);
+
+        Eigen::MatrixXd H = 1e-4 * Eigen::MatrixXd::Identity(projector.cols(), projector.cols());
+        Eigen::MatrixXd M = Eigen::MatrixXd::Identity(n_vars,n_vars);
+        M.block(0,0,6,6) = Eigen::MatrixXd::Zero(6,6);
+        M.block(56,56,12,12) = Eigen::MatrixXd::Zero(12,12);
+        double q_weight = 1e-2;
+        H += q_weight*M;
+        F << Eigen::VectorXd::Zero(6),
+             -q_weight*M.block(6,6,50,50)*( 10*(q_ref-q_meas) - 10*q_dot), 
+             Eigen::VectorXd::Zero(12);
+        H+= B.transpose()*B;
+        F+= B.transpose()*b;
         //H = H.setZero();
-        F = F.setZero();
+        //F = F.setZero();
 
         // input constraints
         Eigen::MatrixXd jointLimConstrMatrix = 0*Eigen::MatrixXd::Identity(projector.cols(), projector.cols());
         Eigen::VectorXd jointLimUpperBound = 0*10 * Eigen::VectorXd::Ones(projector.cols());
         Eigen::VectorXd jointLimLowerBound = -0*10 * Eigen::VectorXd::Ones(projector.cols());
         
-        // dummy equality constraint
-        Eigen::MatrixXd A_dummy = B;
-        Eigen::VectorXd b_dummy = -b;
-        //Eigen::MatrixXd A_dummy = Eigen::MatrixXd::Zero(1,n_vars);
-        //Eigen::VectorXd b_dummy = Eigen::VectorXd::Zero(1);
+        //Eigen::MatrixXd A_dummy = B;
+        //Eigen::VectorXd b_dummy = -b;
+        Eigen::MatrixXd A_dummy = Eigen::MatrixXd::Zero(1,n_vars);
+        Eigen::VectorXd b_dummy = Eigen::VectorXd::Zero(1);
 
         std::shared_ptr<labrob::qpsolvers::QPSolverEigenWrapper<double>> IK_qp_solver_ptr_ = std::make_shared<labrob::qpsolvers::QPSolverEigenWrapper<double>>(
-            std::make_shared<labrob::qpsolvers::HPIPMQPSolver>(projector.cols(), B.rows(), projector.cols()));
+            std::make_shared<labrob::qpsolvers::HPIPMQPSolver>(projector.cols(), A_dummy.rows(), projector.cols()));
 
         IK_qp_solver_ptr_->solve(
             H,
@@ -126,8 +141,11 @@ namespace hrc {
 
   template <int _n_vars>
   struct HierarchicalSolver {
-    static constexpr int max_priority_levels = 4;
+    static constexpr int max_priority_levels = 0;
     static constexpr int n_vars = _n_vars;
+
+
+    HierarchicalSolver(Eigen::MatrixXd q_ref_, Eigen::MatrixXd q_meas_, Eigen::MatrixXd q_dot_): q_ref(q_ref_), q_meas(q_meas_), q_dot(q_dot_){}
 
     template <int n_constraints>
     void add_eq_constr(const Eigen::Matrix<double, n_constraints, n_vars>& A,
@@ -152,7 +170,7 @@ namespace hrc {
       Eigen::MatrixXd solution;
       Eigen::MatrixXd projector;
 
-      group.solve(prev_solution, prev_projector, solution, projector);
+      group.solve(prev_solution, prev_projector, solution, projector, q_ref, q_meas, q_dot);
       // std::cout << solution.transpose() << "\n";
       // last priority: no tasks further down
       if (current_priority == max_priority_levels) return solution;
@@ -169,7 +187,7 @@ namespace hrc {
     }
 
     std::array<PriorityGroup<_n_vars>,max_priority_levels+1> groups;
-
+    Eigen::MatrixXd q_ref, q_meas, q_dot;
   };
 
 } // namespace hrc

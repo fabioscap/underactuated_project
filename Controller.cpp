@@ -1,11 +1,16 @@
 #include "Controller.hpp"
 #include "task.hpp"
 
+
+
 Controller::Controller(dart::dynamics::SkeletonPtr _robot, dart::simulation::WorldPtr _world)
 	: mRobot(_robot), mWorld(_world)
 {
-    setInitialConfiguration();
 
+    setInitialConfiguration();
+    solution_file.open("SOLUTION.txt");
+    error_file.open("ERRORS.txt");
+    init_conf_file.open("INITIAL.txt");
     initial_com = mRobot->getCOM();
 
     // Some useful pointers to robot limbs
@@ -425,14 +430,14 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     J_contact_u << J_leftFoot.block<6,50>(0,6), J_rightFoot.block<6,50>(0,6);
 
 
-    hrc::HierarchicalSolver<56+12> solver = hrc::HierarchicalSolver<56+12>();
+    hrc::HierarchicalSolver<56+12> solver = hrc::HierarchicalSolver<56+12>(initialConfiguration.tail(50), mRobot->getPositions().tail(50), q_dot.tail(50));
 
     // highest priority task: Newton dynamics
     Eigen::Matrix<double,6,56+12> B1;
     B1 << M_l, -J_contact_l.transpose();
 
     solver.add_eq_constr(B1, N_l,0);
-    solver.set_solve_type(0, hrc::solve_type::Pinv);    
+    //solver.set_solve_type(0, hrc::solve_type::Pinv);    
 
     // the feet do not move
     // add left_errorVector_vel / timeStep;
@@ -440,7 +445,7 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     B2 << J_contact, Matrixd<12,12>::Zero();
     Matrixd<12, 1> b2 = Jdot_contact*q_dot - (1/timeStep)*(Matrixd<12,1>::Zero() - feet_velocities);
 
-    solver.add_eq_constr(B2, b2, 1);
+    solver.add_eq_constr(B2, b2, 0);
 
     // COM frame is aligned as world frame
     Matrixd<6,6> Phi1 = Matrixd<6,6>::Zero();
@@ -466,7 +471,7 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     Matrixd<6,1>   b3 = Agdqd -K_p*((Eigen::Vector6d()<<Eigen::Vector3d::Zero(), initial_com - COM).finished())
                               -K_d*((Eigen::Vector6d::Zero()-Ag*q_dot)); // - FFW
 
-    solver.add_eq_constr(B3,b3,2);
+    solver.add_eq_constr(B3,b3,0);
 
     // lower priority: keep a certain joint configuration: avoid null space movements
     double Kp_j = 0.0;
@@ -481,11 +486,19 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     // plot reaction forces
     // plot torso error
 
-    solver.add_eq_constr(B4,b4,3);
+    //solver.add_eq_constr(B4,b4,3);
     Matrixd<56+12, 1> y_mine = solver.solve();
 
     Matrixd<50, 1> t_des = M_u*y_mine.head(56) + N_u - J_contact_u.transpose()*y_mine.tail(12);
+
+    Eigen::MatrixXd complete_sol = Eigen::MatrixXd::Zero(56+12+50,1);
+    complete_sol << t_des, y_mine;
+    //solution_file.open("SOLUTION.txt");
+    solution_file << complete_sol.transpose() << "\n";
+    error_file << (initialConfiguration-mRobot->getPositions()).transpose()<<"\n";
+    init_conf_file << initialConfiguration.transpose() << "\n";
     return t_des;
+
     //return y_mine.head(56).tail(50);
 
 }
