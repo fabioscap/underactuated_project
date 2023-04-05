@@ -145,26 +145,26 @@
   </link>
 
   <link name="r_sole">
-
+<!--
    <visual>
       <geometry>
-        <box size="0.18 0.1 0.007"/>
+        <box size="0.14 0.078 0.007"/>
       </geometry>
-      <origin rpy="0 0 0" xyz="0.0 -0.01 0.0029"/>
+      <origin rpy="0 0 0" xyz="0.0 -0.005 0"/>
       <material name="blue"/>
     </visual>
    <collision>
      <geometry>
         <box size="0.18 0.1 0.007"/>
       </geometry>
-      <origin rpy="0 0 0" xyz="0.0 -0.01 0.0029"/>
+      <origin rpy="0 0 0" xyz="0.0 -0.01 0"/>
     </collision>
-    <!--inertial>
-      <mass value="1.0"/>
+    <inertial>
+      <mass value="2"/>
       <mu value="0.5"/>
       <inertia ixx="1.1e-09" ixy="0" ixz="0" iyy="1.1e-09" iyz="0" izz="1.1e-09"/>
-    </inertial-->
-
+    </inertial>
+-->
   </link>
 <!--
   <link name="r_sole">
@@ -295,27 +295,26 @@
   </link>
 
   <link name="l_sole">
-
+<!--
    <visual>
       <geometry>
-        <box size="0.18 0.1 0.007"/>
+        <box size="0.14 0.078 0.007"/>
       </geometry>
-      <origin rpy="0 0 0" xyz="0.0 0.010 0.0029"/>
+      <origin rpy="0 0 0" xyz="0.0 0.005 0"/>
       <material name="blue"/>
     </visual>
    <collision>
       <geometry>
         <box size="0.18 0.1 0.007"/>
       </geometry>
-      <origin rpy="0 0 0" xyz="0.0 0.010 0.0029"/>
+      <origin rpy="0 0 0" xyz="0.0 -0.01 0"/>
     </collision>
-    <!--inertial>
-      <mass value="1.0"/>
+    <inertial>
+      <mass value="2"/>
       <mu value="0.5"/>
       <inertia ixx="1.1e-09" ixy="0" ixz="0" iyy="1.1e-09" iyz="0" izz="1.1e-09"/>
     </inertial>
 -->
-
   </link>
 <!--
   <link name="l_sole">

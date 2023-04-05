@@ -1,0 +1,6 @@
+- riportare qualche fail (video + reasons)
+- plot tracking (COM + COM adjustment a una posizione vicina o sinusoide)
+- plot GRF, ZMP (urdf fixato )
+- lo stesso con external push
+- da far vedere regularizer su GRF
+- friction cone e ZMP ineq constraints provare push e confrontare

@@ -31,7 +31,7 @@ namespace hrc {
                Eigen::MatrixXd& new_projector,
                Eigen::MatrixXd& q_ref,
                Eigen::MatrixXd& q_meas,
-               Eigen::MatrixXd& q_dot){
+               Eigen::MatrixXd& q_dot){ // TODO remove these if no longer necessary
       if (n_eqs == 0) {new_solution=solution;new_projector=projector;return;}
 
         Eigen::MatrixXd B = Eigen::MatrixXd::Zero(n_eqs, projector.cols());
@@ -56,7 +56,7 @@ namespace hrc {
         // std::cout << "solving"<< std::endl;
         Eigen::VectorXd u;
         if (s == solve_type::Pinv) { 
-          double damping = 0*1e-18;
+          double damping = 1e-18;
           u = (- B.transpose() * (B * B.transpose() + damping*Eigen::MatrixXd::Identity(B.rows(),B.rows())).inverse() * b);
         } else {
 
@@ -66,22 +66,12 @@ namespace hrc {
         print_shape("b", b);
         print_shape("sol", solution);
         //Eigen::MatrixXd H = 1e-6 * Eigen::MatrixXd::Identity(projector.cols(), projector.cols());;
-        
-        //Eigen::MatrixXd H = B.transpose()*B;
+        double reg = 1e-6;
+        Eigen::MatrixXd H = B.transpose()*B + reg*projector.transpose()*projector;
+        Eigen::VectorXd F = B.transpose()*b;
 
-        Eigen::VectorXd F = Eigen::VectorXd::Zero(n_vars);
-
-        Eigen::MatrixXd H = 1e-4 * Eigen::MatrixXd::Identity(projector.cols(), projector.cols());
-        Eigen::MatrixXd M = Eigen::MatrixXd::Identity(n_vars,n_vars);
-        M.block(0,0,6,6) = Eigen::MatrixXd::Zero(6,6);
-        M.block(56,56,12,12) = Eigen::MatrixXd::Zero(12,12);
-        double q_weight = 1e-2;
-        H += q_weight*M;
-        F << Eigen::VectorXd::Zero(6),
-             -q_weight*M.block(6,6,50,50)*( 10*(q_ref-q_meas) - 10*q_dot), 
-             Eigen::VectorXd::Zero(12);
-        H+= B.transpose()*B;
-        F+= B.transpose()*b;
+        //H+= B.transpose()*B;
+        //F+= B.transpose()*b;
         //H = H.setZero();
         //F = F.setZero();
 
@@ -141,10 +131,10 @@ namespace hrc {
 
   template <int _n_vars>
   struct HierarchicalSolver {
-    static constexpr int max_priority_levels = 0;
+    static constexpr int max_priority_levels = 5;
     static constexpr int n_vars = _n_vars;
 
-
+    // TODO remove these if no longer necessary
     HierarchicalSolver(Eigen::MatrixXd q_ref_, Eigen::MatrixXd q_meas_, Eigen::MatrixXd q_dot_): q_ref(q_ref_), q_meas(q_meas_), q_dot(q_dot_){}
 
     template <int n_constraints>
