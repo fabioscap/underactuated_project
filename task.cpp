@@ -1,13 +1,15 @@
 #include "task.hpp"
 
-void hrc::PriorityGroup::solve(const Eigen::MatrixXd& solution,
+bool hrc::PriorityGroup::solve(const Eigen::MatrixXd& solution,
                                const Eigen::MatrixXd& projector,
                                Eigen::MatrixXd& new_solution,
                                Eigen::MatrixXd& new_projector) {
-  if (n_eqs == 0) {new_solution=solution;new_projector=projector;return;}
+  if (n_eqs == 0) {new_solution=solution;new_projector=projector;return true;}
   if (n_ineqs > 0 && s == hrc::solve_type::Pinv) {
     std::cout << "Solving with PINV but there are inequalities... \n";
   }
+
+  bool can_continue = true;
 
   // EQUALITY MATRICES
   Eigen::MatrixXd B = Eigen::MatrixXd::Zero(n_eqs, projector.cols());
@@ -90,6 +92,24 @@ void hrc::PriorityGroup::solve(const Eigen::MatrixXd& solution,
         // C <= u
     );
     u = (IK_qp_solver_ptr_->get_solution());
+
+    // check for Nan, in that case return 0
+    // you will not be able to perform this priority's tasks but
+    // the robot does not explode
+    // the new solution will not influence previous priorities due to
+    // the linear structure of the QP 
+    // y_new = y_old + Z*0 = y_old
+    if (u(0) != u(0)) { // true iff u(0) is Nan
+      // QP presumably failed
+      std::cout << "QP FAIL\n";
+      u = Eigen::VectorXd::Zero(projector.cols());
+      can_continue = false;
+    }
+
+    // TODO: introduce slack variables for inequalities in cf
+    // like in the paper
+    // distinguish between hard inequalities (limits, cannot be violated)
+    // and soft inequalities (keep COM above certain height ..., can be violated)
   }
   new_solution = solution + projector*u; //
   // find null space
@@ -97,10 +117,12 @@ void hrc::PriorityGroup::solve(const Eigen::MatrixXd& solution,
   new_projector = projector * svd.matrixV().rightCols(B.cols() - svd.rank());
   if (new_projector.isZero(0)) {
     std::cout << "hai finito i dof\n";
+    can_continue =  false; // there's no point in doing other tasks
     
   } else {
-    std::cout << "next priority space: " << new_projector.cols()<<"\n";
+    ;//std::cout << "next priority space: " << new_projector.cols()<<"\n";
   }
+  return can_continue;
 } 
 
 
@@ -141,16 +163,16 @@ Eigen::MatrixXd hrc::HierarchicalSolver::solve() {
 Eigen::MatrixXd hrc::HierarchicalSolver::_solve(const Eigen::MatrixXd& prev_projector,
                         const Eigen::MatrixXd& prev_solution,
                         int current_priority) {
-  std::cout << "priority: "<< current_priority << "\n";
+  //std::cout << "priority: "<< current_priority << "\n";
   hrc::PriorityGroup &group = groups.at(current_priority);
 
   Eigen::MatrixXd solution;
   Eigen::MatrixXd projector;
 
-  group.solve(prev_solution, prev_projector, solution, projector);
+  bool can_continue = group.solve(prev_solution, prev_projector, solution, projector);
   // std::cout << solution.transpose() << "\n";
   // last priority: no tasks further down
-  if (current_priority == max_priority_level) return solution;
+  if (current_priority == max_priority_level or !can_continue) return solution;
   else return _solve(projector, solution, current_priority+1 );
   
 }

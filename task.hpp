@@ -23,7 +23,7 @@ namespace hrc {
                          const Eigen::VectorXd& lower,
                          const Eigen::VectorXd& upper);
 
-    void solve(const Eigen::MatrixXd& solution,
+    bool solve(const Eigen::MatrixXd& solution,
                const Eigen::MatrixXd& projector,
                      Eigen::MatrixXd& new_solution,
                      Eigen::MatrixXd& new_projector);

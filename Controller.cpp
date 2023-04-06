@@ -125,7 +125,7 @@ void Controller::update() {
     
     
     // This adds a push to the robot
-    // if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,50,0));
+    //if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,50,0));
 
     // Retrieve current and desired state
     current = getCurrentRobotState();
@@ -235,8 +235,6 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     Matrixd<12,50> J_contact_u;
     J_contact_u << J_leftFoot.block<6,50>(0,6), J_rightFoot.block<6,50>(0,6);
 
-    std::cout << timeStep << "\n";
-
     hrc::HierarchicalSolver solver = hrc::HierarchicalSolver(56+12);
 
     // highest priority task: Newton dynamics
@@ -275,14 +273,14 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     Matrixd<6,56+12> B3 ;
     B3<< Ag, Matrixd<6,12>::Zero();
 
-    Eigen::Vector3d COM_des = initial_com + (Eigen::Vector3d() << +0.05,0.0,-0.2).finished();
+    Eigen::Vector3d COM_des = initial_com + (Eigen::Vector3d() << +0.05,-0.05,-0.2).finished();
 
     Matrixd<6,1>   b3 = Agdqd -K_p*((Eigen::Vector6d()<<Eigen::Vector3d::Zero(), COM_des - COM).finished())
                               -K_d*((Eigen::Vector6d::Zero()-Ag*q_dot)); // - FFW
     
     // test for inequality constraints
     // accel of COM along z axis is bounded
-    double a_z_max = 7.0;
+    double a_z_max = 2.0;
 
     Matrixd<1,56+12> C1 = Matrixd<1,56+12>::Zero();
     Matrixd<1, 1>    l1;
@@ -293,7 +291,7 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
 
     solver.add_ineq_contstr(C1, l1, u1, 1);
     //
-
+    
     solver.add_eq_constr(B3,-b3,2);
 
     // lower priority: keep a certain joint configuration: avoid null space movements
@@ -306,7 +304,7 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     B5.block(0,56,12,12) = Matrixd<12,12>::Identity();
     Matrixd<12,1> b5 = Matrixd<12,1>::Zero();
 
-    //solver.add_eq_constr(B5,-b5,3);
+    solver.add_eq_constr(B5,-b5,3);
 
     // B4 y + b4 = 0
     Matrixd<50,56+12> B4 = Matrixd<50,56+12>::Zero();
@@ -322,9 +320,6 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
 
 
     Matrixd<56+12, 1> y_mine = solver.solve();
-
-    // COM z acc
-    std::cout << "com z acc: " << C1*y_mine + Agdqd(5,0)<< "\n";
 
     Matrixd<50, 1> t_des = M_u*y_mine.head(56) + N_u - J_contact_u.transpose()*y_mine.tail(12);
 
