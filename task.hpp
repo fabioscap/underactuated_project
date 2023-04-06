@@ -15,8 +15,13 @@ namespace hrc {
 
     PriorityGroup(): n_eqs(0), n_ineqs(0), s(solve_type::QP) {}
 
+    // Bx = b
     void add_eq_constr(const Eigen::MatrixXd& A,
                        const Eigen::MatrixXd& b);
+
+    void add_ineq_constr(const Eigen::MatrixXd& C,
+                         const Eigen::VectorXd& lower,
+                         const Eigen::VectorXd& upper);
 
     void solve(const Eigen::MatrixXd& solution,
                const Eigen::MatrixXd& projector,
@@ -33,8 +38,8 @@ namespace hrc {
 
     // inequalities
     std::vector<std::shared_ptr<Eigen::MatrixXd>> C_vec;
-    std::vector<std::shared_ptr<Eigen::MatrixXd>> l_vec;
-    std::vector<std::shared_ptr<Eigen::MatrixXd>> u_vec;
+    std::vector<std::shared_ptr<Eigen::MatrixXd>> lower_vec;
+    std::vector<std::shared_ptr<Eigen::MatrixXd>> upper_vec;
     int n_ineqs;
     //
 
@@ -42,13 +47,18 @@ namespace hrc {
   };
 
   struct HierarchicalSolver {
-    static constexpr int max_priority_levels = 5;
+    static constexpr int max_priority_level = 5;
 
     HierarchicalSolver(int _n_vars): n_vars(_n_vars){}
 
-    inline void add_eq_constr(const Eigen::MatrixXd& A,
+    inline void add_eq_constr(const Eigen::MatrixXd& B,
                               const Eigen::MatrixXd& b,
-                              unsigned int priority) {groups.at(priority).add_eq_constr(A, b);}
+                              unsigned int priority) {groups.at(priority).add_eq_constr(B, b);}
+
+    void add_ineq_contstr(const Eigen::MatrixXd& C,
+                          const Eigen::MatrixXd& lower,
+                          const Eigen::MatrixXd& upper,
+                          unsigned int priority);
 
     Eigen::MatrixXd solve();
 
@@ -56,10 +66,10 @@ namespace hrc {
                            const Eigen::MatrixXd& prev_solution,
                            int current_priority);
 
-    void set_solve_type(int priority, solve_type s);
+    inline void set_solve_type(int priority, solve_type s) {groups.at(priority).set_solve_type(s);};
 
     const int n_vars;
-    std::array<PriorityGroup,max_priority_levels+1> groups;
+    std::array<PriorityGroup,max_priority_level+1> groups;
   };
 
 } // namespace hrc

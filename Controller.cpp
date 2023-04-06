@@ -125,7 +125,7 @@ void Controller::update() {
     
     
     // This adds a push to the robot
-    if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,50,0));
+    // if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,50,0));
 
     // Retrieve current and desired state
     current = getCurrentRobotState();
@@ -187,202 +187,8 @@ void Controller::update() {
     ++walkState.iter;
     walkState.footstepCounter = walkState.iter / (S + D);
 }
-/*
-Eigen::VectorXd Controller::getJointVelocities(State desired, State current, WalkState walkState) {
 
-    // WEIGHTS
-    double left_weight = 0.1;
-    double right_weight = 0.1;
-    double CoM_weight = 1;
-    double qdot_weight = 1e-6;
-    double base_weight = 1;
-    
-    int n_dof_ = 56;
-    double CoM_gains = 0.5;
-    double left_gains = 1;
-    double right_gains = 1;
-    double base_gains = 0.5;
-    
-    // Jacobians
-    Eigen::MatrixXd Jacobian_leftFoot, Jacobian_rightFoot, Jacobian_com, Jacobian_torso_angle;
-    Jacobian_leftFoot = mRobot->getJacobian(mLeftFoot);
-    Jacobian_rightFoot = mRobot->getJacobian(mRightFoot);
-    Jacobian_com.resize(6,56);
-    Jacobian_com << mRobot->getAngularJacobian(mTorso), mRobot->getCOMLinearJacobian();
-    
-    Eigen::MatrixXd Jacobian_base = mRobot->getAngularJacobian(mBase);
-
-    // Generate cartesian error vector   
-    Eigen::VectorXd left_errorVector = desired.getLeftFootPose() - current.getLeftFootPose();
-    left_errorVector.segment(0,3) = angleSignedDistance(desired.getLeftFootPose().segment(0,3), current.getLeftFootPose().segment(0,3));
-    Eigen::VectorXd right_errorVector = desired.getRightFootPose() - current.getRightFootPose();
-    right_errorVector.segment(0,3) = angleSignedDistance(desired.getRightFootPose().segment(0,3), current.getRightFootPose().segment(0,3));
-    Eigen::VectorXd com_errorVector = desired.getComPose() - current.getComPose();
-    com_errorVector.segment(0,3) = angleSignedDistance(desired.getComPose().segment(0,3), current.getComPose().segment(0,3));
-
-    // Cost function
-    Eigen::MatrixXd costFunctionH = qdot_weight * Eigen::MatrixXd::Identity(n_dof_, n_dof_);
-    Eigen::VectorXd costFunctionF = Eigen::VectorXd::Zero(n_dof_);
-
-    costFunctionH += CoM_weight * Jacobian_com.transpose()*Jacobian_com;
-    costFunctionF += - CoM_weight * Jacobian_com.transpose() * (desired.getComVelocity() + CoM_gains*com_errorVector);
-
-    costFunctionH += left_weight * Jacobian_leftFoot.transpose()*Jacobian_leftFoot;
-    costFunctionF += - left_weight * Jacobian_leftFoot.transpose() * (desired.getLeftFootVelocity() + left_gains*left_errorVector);
-  
-    costFunctionH += right_weight * Jacobian_rightFoot.transpose()*Jacobian_rightFoot;
-    costFunctionF += - right_weight * Jacobian_rightFoot.transpose() * (desired.getRightFootVelocity() + right_gains*right_errorVector);
-    
-    costFunctionH += base_weight * Jacobian_base.transpose()*Jacobian_base;
-    costFunctionF += - base_weight * Jacobian_base.transpose() * (- base_gains*getRPY(mBase->getTransform().rotation()));
-
-    // input constraints
-    Eigen::MatrixXd jointLimConstrMatrix = 0*Eigen::MatrixXd::Identity(n_dof_, n_dof_);
-    Eigen::VectorXd jointLimUpperBound = 0*10 * Eigen::VectorXd::Ones(n_dof_);
-    Eigen::VectorXd jointLimLowerBound = -0*10 * Eigen::VectorXd::Ones(n_dof_);
-    
-    // dummy equality constraint
-    Eigen::MatrixXd A_dummy = Eigen::MatrixXd::Zero(6,n_dof_);
-    Eigen::VectorXd b_dummy = Eigen::VectorXd::Zero(6);
-  
-  
-    //if (desired.getLeftFootVelocity().norm() < 1e-6 && desired.getRightFootVelocity().norm() > 1e-6) A_dummy = Jacobian_leftFoot;
-    //if (desired.getRightFootVelocity().norm() < 1e-6 && desired.getLeftFootVelocity().norm() > 1e-6) A_dummy = Jacobian_rightFoot;
-
-    if (walkState.supportFoot == Foot::LEFT) A_dummy = Jacobian_leftFoot;
-    else				     A_dummy = Jacobian_rightFoot;
-
-    std::shared_ptr<labrob::qpsolvers::QPSolverEigenWrapper<double>> IK_qp_solver_ptr_ = std::make_shared<labrob::qpsolvers::QPSolverEigenWrapper<double>>(
-        std::make_shared<labrob::qpsolvers::HPIPMQPSolver>(n_dof_, 6, n_dof_));
-
-    IK_qp_solver_ptr_->solve(
-        costFunctionH,
-        costFunctionF,
-        A_dummy,
-        b_dummy,
-        jointLimConstrMatrix,
-        jointLimLowerBound,
-        jointLimUpperBound
-    );
-    Eigen::VectorXd qDot_des = (IK_qp_solver_ptr_->get_solution());
-    
-    return qDot_des.tail(50);
-}
-
-Eigen::VectorXd Controller::getJointAccelerations(State desired, State current, WalkState walkState) {
-    
-    // WEIGHTS
-    double left_weight = 1;
-    double right_weight = 1;
-    double CoM_weight = 1;
-    double qdot_weight = 1e-2;
-    double qddot_weight = 1e-6;
-    double base_weight = 1;
-    
-    int n_dof_ = 56;
-    
-    double CoM_gains_pos = 0.5/timeStep;
-    double left_gains_pos = 1/timeStep;
-    double right_gains_pos = 1/timeStep;
-    double base_gains_pos = 0.5/timeStep;
-
-    double CoM_gains_vel = CoM_gains_pos;
-    double left_gains_vel = left_gains_pos;
-    double right_gains_vel = right_gains_pos;
-    double base_gains_vel = base_gains_pos;
-
-    // Jacobians
-    Eigen::MatrixXd J_leftFoot, J_rightFoot, J_com, J_torso_angle;
-    J_leftFoot = mRobot->getJacobian(mLeftFoot);
-    J_rightFoot = mRobot->getJacobian(mRightFoot);
-    J_com.resize(6,56);
-    J_com << mRobot->getAngularJacobian(mTorso), mRobot->getCOMLinearJacobian();
-
-    Eigen::MatrixXd J_base = mRobot->getAngularJacobian(mBase);
-
-    // Jacobians derivatives
-    Eigen::MatrixXd Jdot_leftFoot, Jdot_rightFoot, Jdot_com, Jdot_torso_angle;
-    Jdot_leftFoot = mRobot->getJacobianClassicDeriv(mLeftFoot);
-    Jdot_rightFoot = mRobot->getJacobianClassicDeriv(mRightFoot);
-    Jdot_com.resize(6,56);
-    Jdot_com << mRobot->getAngularJacobianDeriv(mTorso), mRobot->getCOMLinearJacobianDeriv();
-
-    Eigen::MatrixXd Jdot_base = mRobot->getAngularJacobianDeriv(mBase);
-
-    // Generate cartesian error vector   
-    Eigen::VectorXd left_errorVector = desired.getLeftFootPose() - current.getLeftFootPose();
-    left_errorVector.segment(0,3) = angleSignedDistance(desired.getLeftFootPose().segment(0,3), current.getLeftFootPose().segment(0,3));
-    Eigen::VectorXd right_errorVector = desired.getRightFootPose() - current.getRightFootPose();
-    right_errorVector.segment(0,3) = angleSignedDistance(desired.getRightFootPose().segment(0,3), current.getRightFootPose().segment(0,3));
-    Eigen::VectorXd com_errorVector = desired.getComPose() - current.getComPose();
-    com_errorVector.segment(0,3) = angleSignedDistance(desired.getComPose().segment(0,3), current.getComPose().segment(0,3));
-    Eigen::VectorXd base_errorVector = angleSignedDistance(Eigen::Vector3d::Zero(), getRPY(mBase->getTransform().rotation()));
-
-    // Generate cartesian velocity error vector   
-    Eigen::VectorXd left_errorVector_vel = desired.getLeftFootVelocity() - current.getLeftFootVelocity();
-    Eigen::VectorXd right_errorVector_vel = desired.getRightFootVelocity() - current.getRightFootVelocity();
-    Eigen::VectorXd com_errorVector_vel = desired.getComVelocity() - current.getComVelocity();
-    Eigen::VectorXd base_errorVector_vel = - mBase->getCOMSpatialVelocity().head(3);;
-
-    // Get joint velocity
-    Eigen::VectorXd qDot_meas = mRobot->getVelocities();
-
-    // Cost function
-    Eigen::MatrixXd costFunctionH = qddot_weight * Eigen::MatrixXd::Identity(n_dof_, n_dof_);
-    Eigen::VectorXd costFunctionF = Eigen::VectorXd::Zero(n_dof_);
-    
-    costFunctionH += qdot_weight * timeStep * timeStep * Eigen::MatrixXd::Identity(n_dof_, n_dof_);
-    costFunctionF += qdot_weight * timeStep * qDot_meas;
-
-    costFunctionH += CoM_weight * J_com.transpose()*J_com;
-    costFunctionF += - CoM_weight * J_com.transpose() * (desired.getComAcceleration() + CoM_gains_vel*com_errorVector_vel + CoM_gains_pos*com_errorVector - Jdot_com*qDot_meas);
-
-    costFunctionH += left_weight * J_leftFoot.transpose()*J_leftFoot;
-    costFunctionF += - left_weight * J_leftFoot.transpose() * (desired.getLeftFootAcceleration() + left_gains_vel*left_errorVector_vel + left_gains_pos*left_errorVector - Jdot_leftFoot*qDot_meas);
-
-    costFunctionH += right_weight * J_rightFoot.transpose()*J_rightFoot;
-    costFunctionF += - right_weight * J_rightFoot.transpose() * (desired.getRightFootAcceleration() + right_gains_vel*right_errorVector_vel + right_gains_pos*right_errorVector - Jdot_rightFoot*qDot_meas);
-
-    costFunctionH += base_weight * J_base.transpose()*J_base;
-    costFunctionF += - base_weight * J_base.transpose() * (base_gains_vel*base_errorVector_vel + base_gains_pos*base_errorVector - Jdot_base*qDot_meas);
-
-    // input constraints
-    Eigen::MatrixXd jointLimConstrMatrix = 0*Eigen::MatrixXd::Identity(n_dof_, n_dof_);
-    Eigen::VectorXd jointLimUpperBound = 0*10 * Eigen::VectorXd::Ones(n_dof_);
-    Eigen::VectorXd jointLimLowerBound = -0*10 * Eigen::VectorXd::Ones(n_dof_);
-
-    // dummy equality constraint
-    Eigen::MatrixXd A_dummy = Eigen::MatrixXd::Zero(6,n_dof_);
-    Eigen::VectorXd b_dummy = Eigen::VectorXd::Zero(6);
-
-    if (walkState.supportFoot == Foot::LEFT) {
-        A_dummy = J_leftFoot;
-        b_dummy = - Jdot_leftFoot * qDot_meas + left_errorVector_vel / timeStep;
-    } else {
-        A_dummy = J_rightFoot;
-        b_dummy = - Jdot_rightFoot * qDot_meas + right_errorVector_vel / timeStep;
-    }
-
-    std::shared_ptr<labrob::qpsolvers::QPSolverEigenWrapper<double>> IK_qp_solver_ptr_ = std::make_shared<labrob::qpsolvers::QPSolverEigenWrapper<double>>(
-        std::make_shared<labrob::qpsolvers::HPIPMQPSolver>(n_dof_, 6, n_dof_));
-
-    IK_qp_solver_ptr_->solve(
-        costFunctionH,
-        costFunctionF,
-        A_dummy,
-        b_dummy,
-        jointLimConstrMatrix,
-        jointLimLowerBound,
-        jointLimUpperBound
-    );
-
-    Eigen::VectorXd qDdot_des = (IK_qp_solver_ptr_->get_solution()).tail(50);
-
-    return qDdot_des;
-}
-*/
 Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkState walkState) {
-
     // com
     Matrixd<3,1> COM = mRobot->getCOM();
     double m = mRobot->getMass();
@@ -403,7 +209,7 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     Matrixd<6, 1> N_l = N.block<6,1>(0,0);
     Matrixd<50, 1> N_u = N.block<50,1>(6,0);
 
-    /* piedi's Jacobian */
+    // piedi's Jacobian 
     Matrixd<6, 56> J_leftFoot = mRobot->getJacobian(mLeftFoot);
     Matrixd<6, 56> J_rightFoot = mRobot->getJacobian(mRightFoot);
     Matrixd<6, 56> Jdot_leftFoot = mRobot->getJacobianClassicDeriv(mLeftFoot);
@@ -431,22 +237,22 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
 
     std::cout << timeStep << "\n";
 
-    hrc::HierarchicalSolver<56+12> solver = hrc::HierarchicalSolver<56+12>(initialConfiguration.tail(50), mRobot->getPositions().tail(50), q_dot.tail(50));
+    hrc::HierarchicalSolver solver = hrc::HierarchicalSolver(56+12);
 
     // highest priority task: Newton dynamics
     Eigen::Matrix<double,6,56+12> B1;
     B1 << M_l, -J_contact_l.transpose();
 
-    solver.add_eq_constr(B1, N_l,0);
+    solver.add_eq_constr(B1, - N_l,0);
     solver.set_solve_type(0, hrc::solve_type::Pinv);    
 
     // the feet do not move
     // add left_errorVector_vel / timeStep;
     Matrixd<12,56+12> B2;
     B2 << J_contact, Matrixd<12,12>::Zero();
-    Matrixd<12, 1> b2 = Jdot_contact*q_dot - (1/(10*timeStep))*(Matrixd<12,1>::Zero() - feet_velocities);
+    Matrixd<12, 1> b2 = Jdot_contact*q_dot - (1/(100*timeStep))*(Matrixd<12,1>::Zero() - feet_velocities);
 
-    solver.add_eq_constr(B2, b2, 1);
+    solver.add_eq_constr(B2, -b2, 1);
 
     // COM frame is aligned as world frame
     Matrixd<6,6> Phi1 = Matrixd<6,6>::Zero();
@@ -465,14 +271,30 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     Matrixd<6,1> Agdqd = X1Gt*Phi1*((mRobot->getCoriolisForces()).block<6,1>(0,0));
 
 
-    double K_p = 100; double K_d=10;
+    double K_p = 500; double K_d=10;
     Matrixd<6,56+12> B3 ;
     B3<< Ag, Matrixd<6,12>::Zero();
 
-    Matrixd<6,1>   b3 = Agdqd -K_p*((Eigen::Vector6d()<<Eigen::Vector3d::Zero(), initial_com - COM).finished())
-                              -K_d*((Eigen::Vector6d::Zero()-Ag*q_dot)); // - FFW
+    Eigen::Vector3d COM_des = initial_com + (Eigen::Vector3d() << +0.05,0.0,-0.2).finished();
 
-    solver.add_eq_constr(B3,b3,2);
+    Matrixd<6,1>   b3 = Agdqd -K_p*((Eigen::Vector6d()<<Eigen::Vector3d::Zero(), COM_des - COM).finished())
+                              -K_d*((Eigen::Vector6d::Zero()-Ag*q_dot)); // - FFW
+    
+    // test for inequality constraints
+    // accel of COM along z axis is bounded
+    double a_z_max = 7.0;
+
+    Matrixd<1,56+12> C1 = Matrixd<1,56+12>::Zero();
+    Matrixd<1, 1>    l1;
+    Matrixd<1, 1>    u1;
+    C1.block(0,0,1,56) = Ag.row(5);
+    l1 << -Agdqd(5,0) -a_z_max;
+    u1 << -Agdqd(5,0) +a_z_max;
+
+    solver.add_ineq_contstr(C1, l1, u1, 1);
+    //
+
+    solver.add_eq_constr(B3,-b3,2);
 
     // lower priority: keep a certain joint configuration: avoid null space movements
     double Kp_j = 5.0;
@@ -484,7 +306,7 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     B5.block(0,56,12,12) = Matrixd<12,12>::Identity();
     Matrixd<12,1> b5 = Matrixd<12,1>::Zero();
 
-    solver.add_eq_constr(B5,b5,4);
+    //solver.add_eq_constr(B5,-b5,3);
 
     // B4 y + b4 = 0
     Matrixd<50,56+12> B4 = Matrixd<50,56+12>::Zero();
@@ -494,25 +316,28 @@ Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkSt
     // plot reaction forces
     // plot torso error
     
-    solver.add_eq_constr(B4,b4,3);
+    solver.add_eq_constr(B4,-b4,3);
 
 
 
 
     Matrixd<56+12, 1> y_mine = solver.solve();
 
+    // COM z acc
+    std::cout << "com z acc: " << C1*y_mine + Agdqd(5,0)<< "\n";
+
     Matrixd<50, 1> t_des = M_u*y_mine.head(56) + N_u - J_contact_u.transpose()*y_mine.tail(12);
 
     Eigen::MatrixXd complete_sol = Eigen::MatrixXd::Zero(56+12+50,1);
     complete_sol << t_des, y_mine;
-    //solution_file.open("SOLUTION.txt");
+    
     solution_file << complete_sol.transpose() << "\n";
     error_file << (initialConfiguration-mRobot->getPositions()).transpose()<<"\n";
     init_conf_file << initialConfiguration.transpose() << "\n";
     return t_des;
 
     //return y_mine.head(56).tail(50);
-
+    
 }
 
 
