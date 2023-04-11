@@ -116,7 +116,7 @@ bool hrc::PriorityGroup::solve(const Eigen::MatrixXd& solution,
   Eigen::BDCSVD<Eigen::MatrixXd> svd(B, Eigen::ComputeFullV);
   new_projector = projector * svd.matrixV().rightCols(B.cols() - svd.rank());
   if (new_projector.isZero(0)) {
-    std::cout << "hai finito i dof\n";
+    // std::cout << "hai finito i dof\n";
     can_continue =  false; // there's no point in doing other tasks
     
   } else {

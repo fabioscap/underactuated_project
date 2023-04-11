@@ -12,8 +12,7 @@
 #include "ISMPC.hpp"
 #include <fstream>
 
-class Controller
-{
+class Controller {
 public:
   Controller(dart::dynamics::SkeletonPtr _robot, dart::simulation::WorldPtr _world);
   virtual ~Controller();
@@ -25,14 +24,17 @@ public:
 
   Eigen::Vector3d getZmpFromExternalForces();
 
-  Eigen::VectorXd getJointVelocities(State desired, State current, WalkState walkState);
-  Eigen::VectorXd getJointAccelerations(State desired, State current, WalkState walkState);
-  Eigen::VectorXd getJointTorques(State desired, State current, WalkState walkState);
+  //Eigen::VectorXd getJointVelocities(State desired, State current, WalkState walkState);
+  //Eigen::VectorXd getJointAccelerations(State desired, State current, WalkState walkState);
+  Eigen::VectorXd getJointTorques(State& desired,State& current);
 
   State getCurrentRobotState();
   State getDesiredRobotState(int i);
 
 private:
+  // get a pointer to a ball in world (change its coordinates in draw method)
+  dart::dynamics::SimpleFramePtr registerBall(const std::string& name, const Eigen::Vector3d& color);
+
   dart::simulation::WorldPtr mWorld;
   dart::dynamics::SkeletonPtr mRobot;
   
@@ -51,17 +53,20 @@ private:
   
   WalkState walkState;
 
-  FootstepPlan* footstepPlan;
+  // FootstepPlan* footstepPlan;
 
   std::vector<Logger*> logList;
 
   std::vector<State> ref;
   
-  std::unique_ptr<ISMPC> ismpc;
+  // std::unique_ptr<ISMPC> ismpc;
 
   Eigen::Vector3d initial_com;
   static constexpr int N_links = 66;
-  std::ofstream solution_file,error_file,init_conf_file;
+  std::ofstream y_file, com_file, com_des_file;
+
+  bool visualize;
+  dart::dynamics::SimpleFramePtr COM_viz, COM_des_viz, ZMP_viz;
 public:
 
 };

@@ -1,337 +1,323 @@
 #include "Controller.hpp"
 #include "task.hpp"
 
-
+#define COLOR_RED (Eigen::Vector3d()<<1.0,0.0,0.0).finished()
+#define COLOR_PURPLE (Eigen::Vector3d()<<0.6,0.44,0.86).finished()
+#define COLOR_GREEN (Eigen::Vector3d()<<0.0,1.0,0.0).finished()
 
 Controller::Controller(dart::dynamics::SkeletonPtr _robot, dart::simulation::WorldPtr _world)
-	: mRobot(_robot), mWorld(_world)
-{
+	: mRobot(_robot), mWorld(_world), visualize(true) {
 
-    setInitialConfiguration();
-    solution_file.open("SOLUTION.txt");
-    error_file.open("ERRORS.txt");
-    init_conf_file.open("INITIAL.txt");
-    initial_com = mRobot->getCOM();
+  setInitialConfiguration();
+  y_file.open("Y.txt");
+  com_file.open("COM.txt");
+  com_des_file.open("COM_DES.txt");
 
-    // Some useful pointers to robot limbs
-    mLeftFoot = mRobot->getBodyNode("l_sole");
-    mRightFoot = mRobot->getBodyNode("r_sole");
-    mBase = mRobot->getBodyNode("base_link");
-    mTorso = mRobot->getBodyNode("torso");
 
-    // Initialize walk state
-    walkState.iter = 0;
-    walkState.footstepCounter = 0;
-    walkState.supportFoot = Foot::RIGHT;
+  // Some useful pointers to robot limbs
+  mLeftFoot = mRobot->getBodyNode("l_sole");
+  mRightFoot = mRobot->getBodyNode("r_sole");
+  mBase = mRobot->getBodyNode("base_link");
+  mTorso = mRobot->getBodyNode("torso");
 
-    // Retrieve current state
+  // Initialize walk state
+  walkState.iter = 0;
+  walkState.footstepCounter = 0;
+  walkState.supportFoot = Foot::RIGHT;
 
-    current = getCurrentRobotState();
+  // Retrieve current state
 
-    // Initialize desired state with reasonable values
+  current = getCurrentRobotState();
+  initial_com = current.com.pos;
+  // Initialize desired state with reasonable values
 
-    desired.com.pos = current.com.pos;
-    desired.com.vel = Eigen::Vector3d::Zero();
-    desired.com.acc = Eigen::Vector3d::Zero();
-    desired.com.ang_pos = Eigen::Vector3d::Zero();
-    desired.com.ang_vel = Eigen::Vector3d::Zero();
-    desired.com.ang_acc = Eigen::Vector3d::Zero();
+  desired.com.pos = current.com.pos;
+  desired.com.vel = Eigen::Vector3d::Zero();
+  desired.com.acc = Eigen::Vector3d::Zero();
+  desired.com.ang_pos = Eigen::Vector3d::Zero();
+  desired.com.ang_vel = Eigen::Vector3d::Zero();
+  desired.com.ang_acc = Eigen::Vector3d::Zero();
 
-    desired.zmpPos = Eigen::Vector3d(current.com.pos(0), current.com.pos(1),0.0);
+  desired.zmpPos = Eigen::Vector3d(current.com.pos(0), current.com.pos(1),0.0);
 
-    desired.leftFoot.pos = current.leftFoot.pos;
-    desired.leftFoot.vel = Eigen::Vector3d::Zero();
-    desired.leftFoot.acc = Eigen::Vector3d::Zero();
-    desired.leftFoot.ang_pos = Eigen::Vector3d::Zero();
-    desired.leftFoot.ang_vel = Eigen::Vector3d::Zero();
-    desired.leftFoot.ang_acc = Eigen::Vector3d::Zero();
+  desired.leftFoot.pos = current.leftFoot.pos;
+  desired.leftFoot.vel = Eigen::Vector3d::Zero();
+  desired.leftFoot.acc = Eigen::Vector3d::Zero();
+  desired.leftFoot.ang_pos = Eigen::Vector3d::Zero();
+  desired.leftFoot.ang_vel = Eigen::Vector3d::Zero();
+  desired.leftFoot.ang_acc = Eigen::Vector3d::Zero();
 
-    desired.rightFoot.pos = current.rightFoot.pos;
-    desired.rightFoot.vel = Eigen::Vector3d::Zero();
-    desired.rightFoot.acc = Eigen::Vector3d::Zero();
-    desired.rightFoot.ang_pos = Eigen::Vector3d::Zero();
-    desired.rightFoot.ang_vel = Eigen::Vector3d::Zero();
-    desired.rightFoot.ang_acc = Eigen::Vector3d::Zero();
+  desired.rightFoot.pos = current.rightFoot.pos;
+  desired.rightFoot.vel = Eigen::Vector3d::Zero();
+  desired.rightFoot.acc = Eigen::Vector3d::Zero();
+  desired.rightFoot.ang_pos = Eigen::Vector3d::Zero();
+  desired.rightFoot.ang_vel = Eigen::Vector3d::Zero();
+  desired.rightFoot.ang_acc = Eigen::Vector3d::Zero();
 
-    initial = desired;
-    
-    // Generate reference velocity
-    std::vector<Vref> vrefSequence;
+  initial = desired;
+  
+  // Generate reference velocity
+  std::vector<Vref> vrefSequence;
 
-    for (int i = 0; i < 5000; i++) {
-        if (i < 100) vrefSequence.push_back(Vref(0.0, 0.0, 0.0));
-        else vrefSequence.push_back(Vref(0.3, 0.0, 0.0));
-        //vrefSequence.push_back(Vref(0.0, 0.0, 0.0));
-    }
-    
-    // Plan footsteps
-    bool firstSupportFootIsLeft = false;
-    Eigen::VectorXd leftFootPose(6), rightFootPose(6);
-    leftFootPose << getRPY(mLeftFoot->getTransform().rotation()), mLeftFoot->getCOM();
-    rightFootPose << getRPY(mRightFoot->getTransform().rotation()), mRightFoot->getCOM();
-    
-    footstepPlan = new FootstepPlan;
-    footstepPlan->plan(vrefSequence, leftFootPose, rightFootPose, firstSupportFootIsLeft);
-    
-    // Compute referefence trajectory
-    // this computes reference trajectory according to footstep plan
-    //ref = computeReferenceTrajectory(footstepPlan, initial, 2000);
-    // this fill the reference trajectory with the initial state
-    for (int i = 0; i < 2000; i++) {
-        ref.push_back(initial);
-    }
-    
-    ismpc = std::make_unique<ISMPC>(footstepPlan, initial, mRobot);
+  for (int i = 0; i < 5000; i++) {
+      if (i < 100) vrefSequence.push_back(Vref(0.0, 0.0, 0.0));
+      else vrefSequence.push_back(Vref(0.3, 0.0, 0.0));
+      //vrefSequence.push_back(Vref(0.0, 0.0, 0.0));
+  }
+  
+  // Plan footsteps
+  bool firstSupportFootIsLeft = false;
+  Eigen::VectorXd leftFootPose(6), rightFootPose(6);
+  leftFootPose << getRPY(mLeftFoot->getTransform().rotation()), mLeftFoot->getCOM();
+  rightFootPose << getRPY(mRightFoot->getTransform().rotation()), mRightFoot->getCOM();
+  
+  //footstepPlan = new FootstepPlan;
+  //footstepPlan->plan(vrefSequence, leftFootPose, rightFootPose, firstSupportFootIsLeft);
+  
+  // Compute referefence trajectory
+  // this computes reference trajectory according to footstep plan
+  //ref = computeReferenceTrajectory(footstepPlan, initial, 2000);
+  // this fill the reference trajectory with the initial state
+  for (int i = 0; i < 2000; i++) {
+      ref.push_back(initial);
+  }
+  
+  // ismpc = std::make_unique<ISMPC>(footstepPlan, initial, mRobot);
 
-    // Create file loggers
-    logList.push_back(new Logger("desired.comPos", &desired.com.pos));
-    logList.push_back(new Logger("desired.comVel", &desired.com.vel));
-    logList.push_back(new Logger("desired.comAcc", &desired.com.acc));
-    logList.push_back(new Logger("desired.zmpPos", &desired.zmpPos));
+  // Create file loggers
+  logList.push_back(new Logger("desired.comPos", &desired.com.pos));
+  logList.push_back(new Logger("desired.comVel", &desired.com.vel));
+  logList.push_back(new Logger("desired.comAcc", &desired.com.acc));
+  logList.push_back(new Logger("desired.zmpPos", &desired.zmpPos));
 
-    logList.push_back(new Logger("current.comPos", &current.com.pos));
-    logList.push_back(new Logger("current.comVel", &current.com.vel));
-    logList.push_back(new Logger("current.comAcc", &current.com.acc));
-    logList.push_back(new Logger("current.zmpPos", &current.zmpPos));
-    
-    logList.push_back(new Logger("desired.leftFoot.pos", &desired.leftFoot.pos));
-    logList.push_back(new Logger("desired.rightFoot.pos", &desired.rightFoot.pos));
-    logList.push_back(new Logger("current.leftFoot.pos", &current.leftFoot.pos));
-    logList.push_back(new Logger("current.rightFoot.pos", &current.rightFoot.pos));
-    
-    logList.push_back(new Logger("desired.leftFoot.vel", &desired.leftFoot.vel));
-    logList.push_back(new Logger("desired.rightFoot.vel", &desired.rightFoot.vel));
-    logList.push_back(new Logger("current.leftFoot.vel", &current.leftFoot.vel));
-    logList.push_back(new Logger("current.rightFoot.vel", &current.rightFoot.vel));
-    
-    logList.push_back(new Logger("desired.leftFoot.acc", &desired.leftFoot.acc));
-    logList.push_back(new Logger("desired.rightFoot.acc", &desired.rightFoot.acc));
-    logList.push_back(new Logger("current.leftFoot.acc", &current.leftFoot.acc));
-    logList.push_back(new Logger("current.rightFoot.acc", &current.rightFoot.acc));
-    
-    logList.push_back(new Logger("desired.com.ang", &desired.com.ang_pos));
-    logList.push_back(new Logger("current.com.ang", &current.com.ang_pos));
-    
-    logList.push_back(new Logger("desired.leftFoot.ang_pos", &desired.leftFoot.ang_pos));
-    logList.push_back(new Logger("desired.leftFoot.ang_vel", &desired.leftFoot.ang_vel));
-    logList.push_back(new Logger("desired.leftFoot.ang_acc", &desired.leftFoot.ang_acc));
+  logList.push_back(new Logger("current.comPos", &current.com.pos));
+  logList.push_back(new Logger("current.comVel", &current.com.vel));
+  logList.push_back(new Logger("current.comAcc", &current.com.acc));
+  logList.push_back(new Logger("current.zmpPos", &current.zmpPos));
+  
+  logList.push_back(new Logger("desired.leftFoot.pos", &desired.leftFoot.pos));
+  logList.push_back(new Logger("desired.rightFoot.pos", &desired.rightFoot.pos));
+  logList.push_back(new Logger("current.leftFoot.pos", &current.leftFoot.pos));
+  logList.push_back(new Logger("current.rightFoot.pos", &current.rightFoot.pos));
+  
+  logList.push_back(new Logger("desired.leftFoot.vel", &desired.leftFoot.vel));
+  logList.push_back(new Logger("desired.rightFoot.vel", &desired.rightFoot.vel));
+  logList.push_back(new Logger("current.leftFoot.vel", &current.leftFoot.vel));
+  logList.push_back(new Logger("current.rightFoot.vel", &current.rightFoot.vel));
+  
+  logList.push_back(new Logger("desired.leftFoot.acc", &desired.leftFoot.acc));
+  logList.push_back(new Logger("desired.rightFoot.acc", &desired.rightFoot.acc));
+  logList.push_back(new Logger("current.leftFoot.acc", &current.leftFoot.acc));
+  logList.push_back(new Logger("current.rightFoot.acc", &current.rightFoot.acc));
+  
+  logList.push_back(new Logger("desired.com.ang", &desired.com.ang_pos));
+  logList.push_back(new Logger("current.com.ang", &current.com.ang_pos));
+  
+  logList.push_back(new Logger("desired.leftFoot.ang_pos", &desired.leftFoot.ang_pos));
+  logList.push_back(new Logger("desired.leftFoot.ang_vel", &desired.leftFoot.ang_vel));
+  logList.push_back(new Logger("desired.leftFoot.ang_acc", &desired.leftFoot.ang_acc));
+
+  
+  // create a visualizer for the COM, ZMP, ...
+  /* OK but gravity 
+  dart::dynamics::SkeletonPtr visualizer = dart::dynamics::Skeleton::create("visualizer");
+
+  dart::dynamics::FreeJoint::Properties joint_properties = dart::dynamics::FreeJoint::Properties();
+  joint_properties.mName = "COM_joint";
+
+
+  dart::dynamics::BodyNodePtr COM_viz = visualizer->createJointAndBodyNodePair<dart::dynamics::FreeJoint>(nullptr,
+                                                                                                          joint_properties, 
+                                                                                                          dart::dynamics::BodyNode::AspectProperties("COM_viz")).second;
+  COM_viz->createShapeNodeWith<dart::dynamics::VisualAspect>(std::make_shared<dart::dynamics::EllipsoidShape>(3.0 * Eigen::Vector3d::Ones()));
+  //COM_viz->setColor(Eigen::Vector4d::Ones());
+  mWorld->addSkeleton(visualizer);
+  */
+  
+  COM_viz = registerBall("COM_viz", COLOR_RED);
+  COM_des_viz = registerBall("COM_des_viz", COLOR_PURPLE);
+  ZMP_viz = registerBall("ZMP_viz", COLOR_GREEN);
 }
 
 Controller::~Controller() {}
 
 void Controller::update() {
-    walkState.simulationTime = mWorld->getSimFrames();
-    
-    
-    
-    // This adds a push to the robot
-    //if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,50,0));
+  walkState.simulationTime = mWorld->getSimFrames();
+  
+  // This adds a push to the robot
+  //if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,50,0));
 
-    // Retrieve current and desired state
-    current = getCurrentRobotState();
-    //desired = ref.at(walkState.iter);
-    //walkState.supportFoot = footstepPlan->getFootstepIndexAtTime(walkState.iter) % 2 == 0 ? walkState.supportFoot = Foot::RIGHT : walkState.supportFoot = Foot::LEFT;
-    walkState.supportFoot = walkState.footstepCounter % 2 == 0 ? walkState.supportFoot = Foot::RIGHT : walkState.supportFoot = Foot::LEFT;
+  // Retrieve current and desired state
+  current = getCurrentRobotState();
+  //desired = ref.at(walkState.iter);
+  desired = getDesiredRobotState(0);
+  //walkState.supportFoot = footstepPlan->getFootstepIndexAtTime(walkState.iter) % 2 == 0 ? walkState.supportFoot = Foot::RIGHT : walkState.supportFoot = Foot::LEFT;
+  //walkState.supportFoot = walkState.footstepCounter % 2 == 0 ? walkState.supportFoot = Foot::RIGHT : walkState.supportFoot = Foot::LEFT;
 
-    // Store the results in files (for plotting)
-    for (int i = 0; i < logList.size(); ++i) {
-        logList.at(i)->log();
-    }
+  // Store the results in files (for plotting)
+  for (int i = 0; i < logList.size(); ++i) {
+      logList.at(i)->log();
+  }
 
-    desired = ismpc->MPC(walkState, current);
+  //desired = ismpc->MPC(walkState, current);
 
-    // Compute inverse kinematics
-    //Eigen::VectorXd qDot =  getJointVelocities(desired, current, walkState);
-    //Eigen::VectorXd qDot =  getJointAccelerations(desired, current, walkState);
+  Eigen::VectorXd tau =  getJointTorques(desired, current);
 
-    Eigen::VectorXd tau =  getJointTorques(desired, current, walkState);
+  // Set the torque of each joint
+  for (int i = 0; i < 50; ++i) {
+      mRobot->setCommand(i+6,tau(i));
+  }
 
-    /*// Set the acceleration of each joint
-    for (int i = 0; i < 50; ++i) {
-        mRobot->setCommand(i+6,qDot(i));
-    }*/
+  // Draw on the screen
+  draw();
 
-    // Set the torque of each joint
-    for (int i = 0; i < 50; ++i) {
-        mRobot->setCommand(i+6,tau(i));
-    }
-
-    /*// right arm
-    mRobot->setPosition(mRobot->getDof("R_SHOULDER_P")->getIndexInSkeleton(), (4)*M_PI/180 );
-    mRobot->setPosition(mRobot->getDof("R_SHOULDER_R")->getIndexInSkeleton(), -8*M_PI/180  );
-    mRobot->setPosition(mRobot->getDof("R_SHOULDER_Y")->getIndexInSkeleton(), 0 );
-    mRobot->setPosition(mRobot->getDof("R_ELBOW_P")->getIndexInSkeleton(), -25*M_PI/180 );
-
-    // left arm
-    mRobot->setPosition(mRobot->getDof("L_SHOULDER_P")->getIndexInSkeleton(), (4)*M_PI/180  );
-    mRobot->setPosition(mRobot->getDof("L_SHOULDER_R")->getIndexInSkeleton(), 8*M_PI/180  );
-    mRobot->setPosition(mRobot->getDof("L_SHOULDER_Y")->getIndexInSkeleton(), 0 );
-    mRobot->setPosition(mRobot->getDof("L_ELBOW_P")->getIndexInSkeleton(), -25*M_PI/180 );*/
-
-    // Arm swing
-    //mRobot->setPosition(mRobot->getDof("R_SHOULDER_P")->getIndexInSkeleton(), (4+5*sin(2*M_PI*0.01*(mWorld->getSimFrames())))*M_PI/180);
-    //mRobot->setPosition(mRobot->getDof("L_SHOULDER_P")->getIndexInSkeleton(), (4-5*sin(2*M_PI*0.01*(mWorld->getSimFrames())))*M_PI/180);
-    /*double leftShoulderDes = mRobot->getPosition(mRobot->getDof("R_HIP_P")->getIndexInSkeleton()) + M_PI/4;
-    double rightShoulderDes = mRobot->getPosition(mRobot->getDof("L_HIP_P")->getIndexInSkeleton()) + M_PI/4;
-    double leftShoulderCurr = mRobot->getPosition(mRobot->getDof("L_SHOULDER_P")->getIndexInSkeleton());
-    double rightShoulderCurr = mRobot->getPosition(mRobot->getDof("R_SHOULDER_P")->getIndexInSkeleton());
-
-    double kArms = 0.1;
-    mRobot->setVelocity(mRobot->getDof("L_SHOULDER_P")->getIndexInSkeleton(), - kArms * (leftShoulderCurr - leftShoulderCurr));
-    mRobot->setVelocity(mRobot->getDof("R_SHOULDER_P")->getIndexInSkeleton(), - kArms * (rightShoulderCurr - rightShoulderCurr));*/
-    
-    // Draw on the screen
-    draw();
-
-    // Update the iteration counters
-    ++walkState.iter;
-    walkState.footstepCounter = walkState.iter / (S + D);
+  // Update the iteration counters
+  //++walkState.iter;
+  //walkState.footstepCounter = walkState.iter / (S + D);
 }
 
-Eigen::VectorXd Controller::getJointTorques(State desired, State current, WalkState walkState) {
-    // com
-    Matrixd<3,1> COM = mRobot->getCOM();
-    double m = mRobot->getMass();
+Eigen::VectorXd Controller::getJointTorques(State& desired,State& current) {
+  // com
+  double m = mRobot->getMass();
 
-    Matrixd<56, 56> M = mRobot->getMassMatrix(); // 56x56
-    Matrixd<56,1> q_dot = mRobot->getVelocities();
+  Matrixd<56, 56> M = mRobot->getMassMatrix(); // 56x56
+  Matrixd<56,1> q_dot = mRobot->getVelocities();
 
-    // lina
+  // split matrix into M_u (joints 50x56) and M_l (COM 6x56)
+  // first 6 components are realtive to floating base
+  Matrixd<6, 56> M_l = M.block<6,56>(0,0);
+  // last 50 components are relative to joints
+  Matrixd<50,56> M_u = M.block<50,56>(6,0);
 
-    // split matrix into M_u (joints 50x56) and M_l (COM 6x56)
-    // first 6 components are realtive to floating base
-    Matrixd<6, 56> M_l = M.block<6,56>(0,0);
-    // last 50 components are relative to joints
-    Matrixd<50,56> M_u = M.block<50,56>(6,0);
+  Matrixd<56, 1> N = mRobot->getCoriolisAndGravityForces();
 
-    Matrixd<56, 1> N = mRobot->getCoriolisAndGravityForces();
+  Matrixd<6, 1> N_l = N.block<6,1>(0,0);
+  Matrixd<50, 1> N_u = N.block<50,1>(6,0);
 
-    Matrixd<6, 1> N_l = N.block<6,1>(0,0);
-    Matrixd<50, 1> N_u = N.block<50,1>(6,0);
+  // piedi's Jacobian 
+  Matrixd<6, 56> J_leftFoot = mRobot->getJacobian(mLeftFoot);
+  Matrixd<6, 56> J_rightFoot = mRobot->getJacobian(mRightFoot);
+  Matrixd<6, 56> Jdot_leftFoot = mRobot->getJacobianClassicDeriv(mLeftFoot);
+  Matrixd<6, 56> Jdot_rightFoot = mRobot->getJacobianClassicDeriv(mRightFoot);
 
-    // piedi's Jacobian 
-    Matrixd<6, 56> J_leftFoot = mRobot->getJacobian(mLeftFoot);
-    Matrixd<6, 56> J_rightFoot = mRobot->getJacobian(mRightFoot);
-    Matrixd<6, 56> Jdot_leftFoot = mRobot->getJacobianClassicDeriv(mLeftFoot);
-    Matrixd<6, 56> Jdot_rightFoot = mRobot->getJacobianClassicDeriv(mRightFoot);
+  // angular then linear
+  Matrixd<6, 1> leftFoot_pose = current.getLeftFootPose();
+  Matrixd<6, 1> rightFoot_pose = current.getRightFootPose();
+  Matrixd<6, 1> leftFoot_velocity = current.getLeftFootVelocity();
+  Matrixd<6, 1> rightFoot_velocity = current.getRightFootVelocity();
+  
+  Matrixd<12, 1> feet_velocities;
+  feet_velocities << leftFoot_velocity, rightFoot_velocity ;
 
-    // angular then linear
-    Matrixd<6, 1> leftFoot_pose = current.getLeftFootPose();
-    Matrixd<6, 1> rightFoot_pose = current.getRightFootPose();
-    Matrixd<6, 1> leftFoot_velocity = current.getLeftFootVelocity();
-    Matrixd<6, 1> rightFoot_velocity = current.getRightFootVelocity();
-    
-    Matrixd<12, 1> feet_velocities;
-    feet_velocities << leftFoot_velocity, rightFoot_velocity ;
+  Matrixd<12,56> J_contact;
+  J_contact << J_leftFoot, J_rightFoot;
+  Matrixd<12,56> Jdot_contact;
+  Jdot_contact << Jdot_leftFoot, Jdot_rightFoot;
 
-    Matrixd<12,56> J_contact;
-    J_contact << J_leftFoot, J_rightFoot;
-    Matrixd<12,56> Jdot_contact;
-    Jdot_contact << Jdot_leftFoot, Jdot_rightFoot;
+  Matrixd<12,6> J_contact_l;
+  J_contact_l << J_leftFoot.block<6,6>(0,0), J_rightFoot.block<6,6>(0,0);
 
-    Matrixd<12,6> J_contact_l;
-    J_contact_l << J_leftFoot.block<6,6>(0,0), J_rightFoot.block<6,6>(0,0);
+  Matrixd<12,50> J_contact_u;
+  J_contact_u << J_leftFoot.block<6,50>(0,6), J_rightFoot.block<6,50>(0,6);
 
-    Matrixd<12,50> J_contact_u;
-    J_contact_u << J_leftFoot.block<6,50>(0,6), J_rightFoot.block<6,50>(0,6);
+  hrc::HierarchicalSolver solver = hrc::HierarchicalSolver(56+12);
 
-    hrc::HierarchicalSolver solver = hrc::HierarchicalSolver(56+12);
+  // highest priority task: Newton dynamics
+  Eigen::Matrix<double,6,56+12> B1;
+  B1 << M_l, -J_contact_l.transpose();
 
-    // highest priority task: Newton dynamics
-    Eigen::Matrix<double,6,56+12> B1;
-    B1 << M_l, -J_contact_l.transpose();
+  solver.add_eq_constr(B1, - N_l,0);
+  solver.set_solve_type(0, hrc::solve_type::Pinv);    
 
-    solver.add_eq_constr(B1, - N_l,0);
-    solver.set_solve_type(0, hrc::solve_type::Pinv);    
+  // the feet do not move
+  // add left_errorVector_vel / timeStep;
+  Matrixd<12,56+12> B2;
+  B2 << J_contact, Matrixd<12,12>::Zero();
+  Matrixd<12, 1> b2 = Jdot_contact*q_dot - (1/(100*timeStep))*(Matrixd<12,1>::Zero() - feet_velocities);
 
-    // the feet do not move
-    // add left_errorVector_vel / timeStep;
-    Matrixd<12,56+12> B2;
-    B2 << J_contact, Matrixd<12,12>::Zero();
-    Matrixd<12, 1> b2 = Jdot_contact*q_dot - (1/(100*timeStep))*(Matrixd<12,1>::Zero() - feet_velocities);
+  solver.add_eq_constr(B2, -b2, 1);
 
-    solver.add_eq_constr(B2, -b2, 1);
+  // COM frame is aligned as world frame
+  Matrixd<6,6> Phi1 = Matrixd<6,6>::Zero();
+  auto R01 = mBase->getTransform().rotation();
+  Phi1.block<3,3>(0,0) = R01;
+  Phi1.block<3,3>(3,3) = R01;
 
-    // COM frame is aligned as world frame
-    Matrixd<6,6> Phi1 = Matrixd<6,6>::Zero();
-    auto R01 = mBase->getTransform().rotation();
-    Phi1.block<3,3>(0,0) = R01;
-    Phi1.block<3,3>(3,3) = R01;
-
-    Matrixd<6,6> X1Gt = Matrixd<6,6>::Zero();
-    X1Gt.block<3,3>(0,0) = R01;
-    X1Gt.block<3,3>(3,3) = R01;
-    X1Gt.block<3,3>(0,3) = -R01*skew(mRobot->getCOM(mBase));
+  Matrixd<6,6> X1Gt = Matrixd<6,6>::Zero();
+  X1Gt.block<3,3>(0,0) = R01;
+  X1Gt.block<3,3>(3,3) = R01;
+  X1Gt.block<3,3>(0,3) = -R01*skew(mRobot->getCOM(mBase));
 
 
-    Matrixd<6,56> Ag    = X1Gt*Phi1*M_l;
-    //print_shape("coriolis", mRobot->getCoriolisForces().block<6,1>(0,0));
-    Matrixd<6,1> Agdqd = X1Gt*Phi1*((mRobot->getCoriolisForces()).block<6,1>(0,0));
+  Matrixd<6,56> Ag    = X1Gt*Phi1*M_l;
+  //print_shape("coriolis", mRobot->getCoriolisForces().block<6,1>(0,0));
+  Matrixd<6,1> Agdqd = X1Gt*Phi1*((mRobot->getCoriolisForces()).block<6,1>(0,0));
 
+  double K_x = 400;
+  double K_y = 000;
+  double K_z = 00;
+  Eigen::Matrix6d K_p = (Eigen::Vector6d() << 0,0,0,K_x, K_y, K_z).finished().asDiagonal(); 
+  double K_d=30;
 
-    double K_p = 500; double K_d=10;
-    Matrixd<6,56+12> B3 ;
-    B3<< Ag, Matrixd<6,12>::Zero();
+  Matrixd<6,56+12> B3 ;
+  B3<< Ag, Matrixd<6,12>::Zero();
 
-    Eigen::Vector3d COM_des = initial_com + (Eigen::Vector3d() << +0.05,-0.05,-0.2).finished();
-
-    Matrixd<6,1>   b3 = Agdqd -K_p*((Eigen::Vector6d()<<Eigen::Vector3d::Zero(), COM_des - COM).finished())
-                              -K_d*((Eigen::Vector6d::Zero()-Ag*q_dot)); // - FFW
+  Matrixd<6,1>   b3 = Agdqd -K_p*((Eigen::Vector6d()<<Eigen::Vector3d::Zero(), desired.com.pos - current.com.pos).finished())
+                            -K_d*((Eigen::Vector6d::Zero()-Ag*q_dot)); // - FFW
     
     // test for inequality constraints
     // accel of COM along z axis is bounded
-    double a_z_max = 2.0;
+  double a_z_max = 8.0;
 
-    Matrixd<1,56+12> C1 = Matrixd<1,56+12>::Zero();
-    Matrixd<1, 1>    l1;
-    Matrixd<1, 1>    u1;
-    C1.block(0,0,1,56) = Ag.row(5);
-    l1 << -Agdqd(5,0) -a_z_max;
-    u1 << -Agdqd(5,0) +a_z_max;
+  Matrixd<1,56+12> C1 = Matrixd<1,56+12>::Zero();
+  Matrixd<1, 1>    l1;
+  Matrixd<1, 1>    u1;
+  C1.block(0,0,1,56) = Ag.row(5);
+  l1 << -Agdqd(5,0) -a_z_max;
+  u1 << -Agdqd(5,0) +a_z_max;
 
-    solver.add_ineq_contstr(C1, l1, u1, 1);
-    //
-    
-    solver.add_eq_constr(B3,-b3,2);
+  solver.add_ineq_contstr(C1, l1, u1, 1);
+  //
+  
+  solver.add_eq_constr(B3,-b3,2);
 
-    // lower priority: keep a certain joint configuration: avoid null space movements
-    double Kp_j = 5.0;
-    double Kd_j = 1;
+  // lower priority: keep a certain joint configuration: avoid null space movements
+  double Kp_j = 5.0;
+  double Kd_j = 1;
 
+  // B4 y + b4 = 0
+  Matrixd<50,56+12> B4 = Matrixd<50,56+12>::Zero();
+  B4.block(0,6,50,50) = Eigen::Matrix<double,50,50>::Identity();
+  Matrixd<50,1>  b4 = -Kp_j*(initialConfiguration.tail(50)-mRobot->getPositions().tail(50))+Kd_j*q_dot.tail(50);
+  
+  // regularizer on contact forces
+  Matrixd<12,56+12> B5 = Matrixd<12,56+12>::Zero();
+  B5.block(0,56,12,12) = Matrixd<12,12>::Identity();
+  Matrixd<12,1> b5 = Matrixd<12,1>::Zero();
 
-    // regularizer on contact forces
-    Matrixd<12,56+12> B5 = Matrixd<12,56+12>::Zero();
-    B5.block(0,56,12,12) = Matrixd<12,12>::Identity();
-    Matrixd<12,1> b5 = Matrixd<12,1>::Zero();
+  solver.add_eq_constr(B5,-b5,3);
 
-    solver.add_eq_constr(B5,-b5,3);
-
-    // B4 y + b4 = 0
-    Matrixd<50,56+12> B4 = Matrixd<50,56+12>::Zero();
-    B4.block(0,6,50,50) = Eigen::Matrix<double,50,50>::Identity();
-    Matrixd<50,1>  b4 = -Kp_j*(initialConfiguration.tail(50)-mRobot->getPositions().tail(50))+Kd_j*q_dot.tail(50);
-    
-    // plot reaction forces
-    // plot torso error
-    
-    solver.add_eq_constr(B4,-b4,3);
-
+  // plot reaction forces
+  // plot torso error
+  
+  solver.add_eq_constr(B4,-b4,3);
 
 
 
-    Matrixd<56+12, 1> y_mine = solver.solve();
 
-    Matrixd<50, 1> t_des = M_u*y_mine.head(56) + N_u - J_contact_u.transpose()*y_mine.tail(12);
+  Matrixd<56+12, 1> y_mine = solver.solve();
 
-    Eigen::MatrixXd complete_sol = Eigen::MatrixXd::Zero(56+12+50,1);
-    complete_sol << t_des, y_mine;
-    
-    solution_file << complete_sol.transpose() << "\n";
-    error_file << (initialConfiguration-mRobot->getPositions()).transpose()<<"\n";
-    init_conf_file << initialConfiguration.transpose() << "\n";
-    return t_des;
+  Matrixd<50, 1> t_des = M_u*y_mine.head(56) + N_u - J_contact_u.transpose()*y_mine.tail(12);
 
-    //return y_mine.head(56).tail(50);
+  Eigen::MatrixXd complete_sol = Eigen::MatrixXd::Zero(56+12+50,1);
+  complete_sol << t_des, y_mine;
+  
+  y_file << complete_sol.transpose() << "\n";
+  com_file << current.com.pos.transpose()<<"\n";
+  com_des_file << desired.com.pos.transpose() << "\n";
+  return t_des;
+
+  //return y_mine.head(56).tail(50);
     
 }
 
@@ -348,7 +334,7 @@ State Controller::getCurrentRobotState()
     state.com.ang_vel = mTorso->getCOMSpatialVelocity().head(3);
     state.com.ang_acc = mTorso->getCOMSpatialAcceleration().head(3);
 
-    state.zmpPos = state.com.pos - state.com.acc / (omega*omega); //getZmpFromExternalForces(); //
+    state.zmpPos = getZmpFromExternalForces(); //
 
     state.leftFoot.pos = mLeftFoot->getCOM();
     state.leftFoot.vel = mLeftFoot->getCOMLinearVelocity();
@@ -367,97 +353,117 @@ State Controller::getCurrentRobotState()
     return state;
 }
 
+State Controller::getDesiredRobotState(int i) {
+  State state;
+  // just COM for now
+  state.com.pos = initial_com + (Eigen::Vector3d() << +0.1,0.,0.0).finished();
+
+  return state;
+}
+
 Eigen::Vector3d Controller::getZmpFromExternalForces()
 {
-    Eigen::Vector3d zmp_v;
-    bool left_contact = false;
-    bool right_contact = false;
+  Eigen::Vector3d zmp_v;
+  bool left_contact = false;
+  bool right_contact = false;
 
-    Eigen::Vector3d left_cop;
-    if(abs(mLeftFoot->getConstraintImpulse()[5]) > 0.01){
-        left_cop << -mLeftFoot->getConstraintImpulse()(1)/mLeftFoot->getConstraintImpulse()(5), 
-                     mLeftFoot->getConstraintImpulse()(0)/mLeftFoot->getConstraintImpulse()(5), 
-                     0.0;
-        Eigen::Matrix3d iRotation = mLeftFoot->getWorldTransform().rotation();
-        Eigen::Vector3d iTransl   = mLeftFoot->getWorldTransform().translation();
-        left_cop = iTransl + iRotation*left_cop;
-        left_contact = true;
-    }
+  Eigen::Vector3d left_cop;
+  if(abs(mLeftFoot->getConstraintImpulse()[5]) > 0.01){
+    left_cop << -mLeftFoot->getConstraintImpulse()(1)/mLeftFoot->getConstraintImpulse()(5), 
+                mLeftFoot->getConstraintImpulse()(0)/mLeftFoot->getConstraintImpulse()(5), 
+                0.0;
+    Eigen::Matrix3d iRotation = mLeftFoot->getWorldTransform().rotation();
+    Eigen::Vector3d iTransl   = mLeftFoot->getWorldTransform().translation();
+    left_cop = iTransl + iRotation*left_cop;
+    left_contact = true;
+  }
 
-    Eigen::Vector3d right_cop;
-    if(abs(mRightFoot->getConstraintImpulse()[5]) > 0.01){
-        right_cop << -mRightFoot->getConstraintImpulse()(1)/mRightFoot->getConstraintImpulse()(5), mRightFoot->getConstraintImpulse()(0)/mRightFoot->getConstraintImpulse()(5), 0.0;
-        Eigen::Matrix3d iRotation = mRightFoot->getWorldTransform().rotation();
-        Eigen::Vector3d iTransl   = mRightFoot->getWorldTransform().translation();
-        right_cop = iTransl + iRotation*right_cop;
-        right_contact = true;
-    }
+  Eigen::Vector3d right_cop;
+  if(abs(mRightFoot->getConstraintImpulse()[5]) > 0.01){
+    right_cop << -mRightFoot->getConstraintImpulse()(1)/mRightFoot->getConstraintImpulse()(5), 
+                 mRightFoot->getConstraintImpulse()(0)/mRightFoot->getConstraintImpulse()(5), 
+                  0.0;
+    Eigen::Matrix3d iRotation = mRightFoot->getWorldTransform().rotation();
+    Eigen::Vector3d iTransl   = mRightFoot->getWorldTransform().translation();
+    right_cop = iTransl + iRotation*right_cop;
+    right_contact = true;
+  }
 
-    if(left_contact && right_contact){
-        zmp_v << (left_cop(0)*mLeftFoot->getConstraintImpulse()[5] + right_cop(0)*mRightFoot->getConstraintImpulse()[5])/(mLeftFoot->getConstraintImpulse()[5] + mRightFoot->getConstraintImpulse()[5]),
-                 (left_cop(1)*mLeftFoot->getConstraintImpulse()[5] + right_cop(1)*mRightFoot->getConstraintImpulse()[5])/(mLeftFoot->getConstraintImpulse()[5] + mRightFoot->getConstraintImpulse()[5]),
-		 0.0;
-    }else if(left_contact){
-        zmp_v << left_cop(0), left_cop(1), 0.0;
-    }else if(right_contact){
-        zmp_v << right_cop(0), right_cop(1), 0.0;
-    }else{
-        // No contact detected
-        zmp_v << 0.0, 0.0, 0.0;
-    }
+  if(left_contact && right_contact){
+    zmp_v << (left_cop(0)*mLeftFoot->getConstraintImpulse()[5] + right_cop(0)*mRightFoot->getConstraintImpulse()[5])/(mLeftFoot->getConstraintImpulse()[5] + mRightFoot->getConstraintImpulse()[5]),
+            (left_cop(1)*mLeftFoot->getConstraintImpulse()[5] + right_cop(1)*mRightFoot->getConstraintImpulse()[5])/(mLeftFoot->getConstraintImpulse()[5] + mRightFoot->getConstraintImpulse()[5]),
+  0.0;
+  }else if(left_contact){
+    zmp_v << left_cop(0), left_cop(1), 0.0;
+  }else if(right_contact){
+    zmp_v << right_cop(0), right_cop(1), 0.0;
+  }else{
+    // No contact detected
+    zmp_v << 0.0, 0.0, 0.0;
+  }
 
-    return zmp_v;
+  return zmp_v;
 }
 
 void Controller::draw() {
-    std::shared_ptr<dart::dynamics::BoxShape> box;
-    box = std::make_shared<dart::dynamics::BoxShape>(Eigen::Vector3d(footConstraintSquareWidth, footConstraintSquareWidth, 0.01));
-    //dart::dynamics::BoxShape::Properties box_properties;
-    //box->setPositions(
-    //mTorso->createShapeNodeWith<VisualAspect>(mArrow);
+  if (visualize) {
+    COM_viz->setTranslation(current.com.pos);
+    COM_des_viz->setTranslation(desired.com.pos);
+    ZMP_viz->setTranslation(current.zmpPos);
+  }
 }
 
 void Controller::setInitialConfiguration() {
-    initialConfiguration = mRobot->getPositions();
+  initialConfiguration = mRobot->getPositions();
 
-    // floating base
-    mRobot->setPosition(0, 0.0 );
-    mRobot->setPosition(1, -0*M_PI/180.0);
-    mRobot->setPosition(2, 0.0 );
-    mRobot->setPosition(3, 0.035502257 -0.0);
-    mRobot->setPosition(4, -0.0);
-    mRobot->setPosition(5, 0.751 +0.00138 - 0.000005);
+  // floating base
+  mRobot->setPosition(0, 0.0 );
+  mRobot->setPosition(1, -0*M_PI/180.0);
+  mRobot->setPosition(2, 0.0 );
+  mRobot->setPosition(3, 0.035502257 -0.0);
+  mRobot->setPosition(4, -0.0);
+  mRobot->setPosition(5, 0.751 +0.00138 - 0.000005);
 
-    // right leg
-    mRobot->setPosition(mRobot->getDof("R_HIP_Y")->getIndexInSkeleton(), 0.0 );
-    mRobot->setPosition(mRobot->getDof("R_HIP_R")->getIndexInSkeleton(), -3*M_PI/180 );
-    mRobot->setPosition(mRobot->getDof("R_HIP_P")->getIndexInSkeleton(), -25*M_PI/180 );
-    mRobot->setPosition(mRobot->getDof("R_KNEE_P")->getIndexInSkeleton(), 50*M_PI/180 );
-    mRobot->setPosition(mRobot->getDof("R_ANKLE_P")->getIndexInSkeleton(), -26*M_PI/180+0.0175 );
-    mRobot->setPosition(mRobot->getDof("R_ANKLE_R")->getIndexInSkeleton(), 4*M_PI/180-0.01745);
+  // right leg
+  mRobot->setPosition(mRobot->getDof("R_HIP_Y")->getIndexInSkeleton(), 0.0 );
+  mRobot->setPosition(mRobot->getDof("R_HIP_R")->getIndexInSkeleton(), -3*M_PI/180 );
+  mRobot->setPosition(mRobot->getDof("R_HIP_P")->getIndexInSkeleton(), -25*M_PI/180 );
+  mRobot->setPosition(mRobot->getDof("R_KNEE_P")->getIndexInSkeleton(), 50*M_PI/180 );
+  mRobot->setPosition(mRobot->getDof("R_ANKLE_P")->getIndexInSkeleton(), -26*M_PI/180+0.0175 );
+  mRobot->setPosition(mRobot->getDof("R_ANKLE_R")->getIndexInSkeleton(), 4*M_PI/180-0.01745);
 
-    // left leg
-    mRobot->setPosition(mRobot->getDof("L_HIP_Y")->getIndexInSkeleton(), 0.0 );
-    mRobot->setPosition(mRobot->getDof("L_HIP_R")->getIndexInSkeleton(), 3*M_PI/180 );
-    mRobot->setPosition(mRobot->getDof("L_HIP_P")->getIndexInSkeleton(), -25*M_PI/180 );
-    mRobot->setPosition(mRobot->getDof("L_KNEE_P")->getIndexInSkeleton(), 50*M_PI/180 );
-    mRobot->setPosition(mRobot->getDof("L_ANKLE_P")->getIndexInSkeleton(), -26*M_PI/180+0.0175 );
-    mRobot->setPosition(mRobot->getDof("L_ANKLE_R")->getIndexInSkeleton(), -4*M_PI/180+0.01745);
+  // left leg
+  mRobot->setPosition(mRobot->getDof("L_HIP_Y")->getIndexInSkeleton(), 0.0 );
+  mRobot->setPosition(mRobot->getDof("L_HIP_R")->getIndexInSkeleton(), 3*M_PI/180 );
+  mRobot->setPosition(mRobot->getDof("L_HIP_P")->getIndexInSkeleton(), -25*M_PI/180 );
+  mRobot->setPosition(mRobot->getDof("L_KNEE_P")->getIndexInSkeleton(), 50*M_PI/180 );
+  mRobot->setPosition(mRobot->getDof("L_ANKLE_P")->getIndexInSkeleton(), -26*M_PI/180+0.0175 );
+  mRobot->setPosition(mRobot->getDof("L_ANKLE_R")->getIndexInSkeleton(), -4*M_PI/180+0.01745);
 
-    // right arm
-    mRobot->setPosition(mRobot->getDof("R_SHOULDER_P")->getIndexInSkeleton(), (4)*M_PI/180 );
-    mRobot->setPosition(mRobot->getDof("R_SHOULDER_R")->getIndexInSkeleton(), -8*M_PI/180  );
-    mRobot->setPosition(mRobot->getDof("R_SHOULDER_Y")->getIndexInSkeleton(), 0 );
-    mRobot->setPosition(mRobot->getDof("R_ELBOW_P")->getIndexInSkeleton(), -25*M_PI/180 );
+  // right arm
+  mRobot->setPosition(mRobot->getDof("R_SHOULDER_P")->getIndexInSkeleton(), (4)*M_PI/180 );
+  mRobot->setPosition(mRobot->getDof("R_SHOULDER_R")->getIndexInSkeleton(), -8*M_PI/180  );
+  mRobot->setPosition(mRobot->getDof("R_SHOULDER_Y")->getIndexInSkeleton(), 0 );
+  mRobot->setPosition(mRobot->getDof("R_ELBOW_P")->getIndexInSkeleton(), -25*M_PI/180 );
 
-    // left arm
-    mRobot->setPosition(mRobot->getDof("L_SHOULDER_P")->getIndexInSkeleton(), (4)*M_PI/180  );
-    mRobot->setPosition(mRobot->getDof("L_SHOULDER_R")->getIndexInSkeleton(), 8*M_PI/180  );
-    mRobot->setPosition(mRobot->getDof("L_SHOULDER_Y")->getIndexInSkeleton(), 0 );
-    mRobot->setPosition(mRobot->getDof("L_ELBOW_P")->getIndexInSkeleton(), -25*M_PI/180 );
-  
-    initialConfiguration = mRobot->getPositions();
+  // left arm
+  mRobot->setPosition(mRobot->getDof("L_SHOULDER_P")->getIndexInSkeleton(), (4)*M_PI/180  );
+  mRobot->setPosition(mRobot->getDof("L_SHOULDER_R")->getIndexInSkeleton(), 8*M_PI/180  );
+  mRobot->setPosition(mRobot->getDof("L_SHOULDER_Y")->getIndexInSkeleton(), 0 );
+  mRobot->setPosition(mRobot->getDof("L_ELBOW_P")->getIndexInSkeleton(), -25*M_PI/180 );
+
+  initialConfiguration = mRobot->getPositions();
 }
 
 
+dart::dynamics::SimpleFramePtr Controller::registerBall(const std::string& name, const Eigen::Vector3d& color) {
+  dart::dynamics::SimpleFramePtr ball_frame = std::make_shared<dart::dynamics::SimpleFrame>(dart::dynamics::Frame::World(),name, Eigen::Isometry3d::Identity());
 
+  ball_frame->setShape(std::make_shared<dart::dynamics::EllipsoidShape>(.1 * Eigen::Vector3d::Ones()));
+  ball_frame->createVisualAspect();
+  if (visualize)
+    ball_frame->getVisualAspect()->setColor( color );
+  mWorld->addSimpleFrame(ball_frame);
+
+  return ball_frame;
+}
