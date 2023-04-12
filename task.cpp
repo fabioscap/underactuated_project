@@ -70,7 +70,7 @@ bool hrc::PriorityGroup::solve(const Eigen::MatrixXd& solution,
   } else {
 
     // create cost function
-    double reg = 1e-6;
+    double reg = 1e-8;
     Eigen::MatrixXd H = B.transpose()*B + reg*projector.transpose()*projector;
     Eigen::VectorXd F = -B.transpose()*b;
     
@@ -105,6 +105,15 @@ bool hrc::PriorityGroup::solve(const Eigen::MatrixXd& solution,
       u = Eigen::VectorXd::Zero(projector.cols());
       can_continue = false;
     }
+    Matrixd<1,1> opt_cost =  u.transpose()*H*u + F.transpose()*u;
+    std::cout << opt_cost << "\n";
+    if (!opt_cost.isZero(1e-4)) {
+      std::cout << "cannot do task\n";
+      //can_continue = false;
+      //new_solution = solution;
+      //new_projector = projector;
+      //return can_continue;
+    }
 
     // TODO: introduce slack variables for inequalities in cf
     // like in the paper
@@ -122,6 +131,7 @@ bool hrc::PriorityGroup::solve(const Eigen::MatrixXd& solution,
   } else {
     ;//std::cout << "next priority space: " << new_projector.cols()<<"\n";
   }
+
   return can_continue;
 } 
 
@@ -163,7 +173,7 @@ Eigen::MatrixXd hrc::HierarchicalSolver::solve() {
 Eigen::MatrixXd hrc::HierarchicalSolver::_solve(const Eigen::MatrixXd& prev_projector,
                         const Eigen::MatrixXd& prev_solution,
                         int current_priority) {
-  //std::cout << "priority: "<< current_priority << "\n";
+  std::cout << "priority: "<< current_priority << "\n";
   hrc::PriorityGroup &group = groups.at(current_priority);
 
   Eigen::MatrixXd solution;

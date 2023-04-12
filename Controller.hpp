@@ -29,7 +29,7 @@ public:
   Eigen::VectorXd getJointTorques(State& desired,State& current);
 
   State getCurrentRobotState();
-  State getDesiredRobotState(int i);
+  State getDesiredRobotState(int timeStep);
 
 private:
   // get a pointer to a ball in world (change its coordinates in draw method)
