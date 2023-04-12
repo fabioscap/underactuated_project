@@ -12,7 +12,8 @@ Controller::Controller(dart::dynamics::SkeletonPtr _robot, dart::simulation::Wor
   y_file.open("Y.txt");
   com_file.open("COM.txt");
   com_des_file.open("COM_DES.txt");
-
+  ZMP_sol_file.open("ZMP_SOL.txt");
+  ZMP_file.open("ZMP.txt");
 
   // Some useful pointers to robot limbs
   mLeftFoot = mRobot->getBodyNode("l_sole");
@@ -28,34 +29,12 @@ Controller::Controller(dart::dynamics::SkeletonPtr _robot, dart::simulation::Wor
   // Retrieve current state
 
   current = getCurrentRobotState();
+  initial = getCurrentRobotState();
   initial_com = current.com.pos;
   // Initialize desired state with reasonable values
 
-  desired.com.pos = current.com.pos;
-  desired.com.vel = Eigen::Vector3d::Zero();
-  desired.com.acc = Eigen::Vector3d::Zero();
-  desired.com.ang_pos = Eigen::Vector3d::Zero();
-  desired.com.ang_vel = Eigen::Vector3d::Zero();
-  desired.com.ang_acc = Eigen::Vector3d::Zero();
-
-  desired.zmpPos = Eigen::Vector3d(current.com.pos(0), current.com.pos(1),0.0);
-
-  desired.leftFoot.pos = current.leftFoot.pos;
-  desired.leftFoot.vel = Eigen::Vector3d::Zero();
-  desired.leftFoot.acc = Eigen::Vector3d::Zero();
-  desired.leftFoot.ang_pos = Eigen::Vector3d::Zero();
-  desired.leftFoot.ang_vel = Eigen::Vector3d::Zero();
-  desired.leftFoot.ang_acc = Eigen::Vector3d::Zero();
-
-  desired.rightFoot.pos = current.rightFoot.pos;
-  desired.rightFoot.vel = Eigen::Vector3d::Zero();
-  desired.rightFoot.acc = Eigen::Vector3d::Zero();
-  desired.rightFoot.ang_pos = Eigen::Vector3d::Zero();
-  desired.rightFoot.ang_vel = Eigen::Vector3d::Zero();
-  desired.rightFoot.ang_acc = Eigen::Vector3d::Zero();
-
-  initial = desired;
-  
+  desired = getDesiredRobotState(0);
+    
   // Generate reference velocity
   std::vector<Vref> vrefSequence;
 
@@ -145,7 +124,7 @@ void Controller::update() {
   walkState.simulationTime = mWorld->getSimFrames();
   
   // This adds a push to the robot
-  //if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,50,0));
+  if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,100,0));
 
   // Retrieve current and desired state
   current = getCurrentRobotState();
@@ -249,9 +228,9 @@ Eigen::VectorXd Controller::getJointTorques(State& desired,State& current) {
   //print_shape("coriolis", mRobot->getCoriolisForces().block<6,1>(0,0));
   Matrixd<6,1> Agdqd = X1Gt*Phi1*((mRobot->getCoriolisForces()).block<6,1>(0,0));
 
-  double K_x = 800;
-  double K_y = 800;
-  double K_z = 5;
+  double K_x = 10;
+  double K_y = 10;
+  double K_z = 10;
   Eigen::Matrix6d K_p = (Eigen::Vector6d() << 0,0,0,K_x, K_y, K_z).finished().asDiagonal(); 
   double K_d=10;
 
@@ -277,7 +256,7 @@ Eigen::VectorXd Controller::getJointTorques(State& desired,State& current) {
   //*/
 
   // ZMP constraints
-  double dx = 0.04; double dy = 0.1; double high_val = 1000;
+  double dx = 0.08; double dy = 0.1; double high_val = 1000;
   auto leftFootTransform = mLeftFoot->getWorldTransform();
   auto rightFootTransform = mRightFoot->getWorldTransform();
   Eigen::Matrix3d iRotation_r = rightFootTransform.rotation();
@@ -373,7 +352,7 @@ Eigen::VectorXd Controller::getJointTorques(State& desired,State& current) {
   com_file << current.com.pos.transpose()<<"\n";
   com_des_file << desired.com.pos.transpose() << "\n";
 
-  /* ZMP from solution
+  /* ZMP from solution */
   ty_l = y_mine(57,0);
   tx_l = y_mine(56,0);
   ty_r = y_mine(63,0);
@@ -383,12 +362,16 @@ Eigen::VectorXd Controller::getJointTorques(State& desired,State& current) {
 
   Eigen::Vector3d cop_l_l; cop_l_l << -ty_l / Fz_l, tx_l/Fz_l, 0.0;
   Eigen::Vector3d cop_r_r; cop_r_r << -ty_r / Fz_r, tx_r/Fz_r, 0.0;
-
-  Eigen::Vector3d cop_l_w = iTransl_l + iRotation_l*cop_l_l;
-  Eigen::Vector3d cop_r_w = iTransl_r + iRotation_r*cop_r_r;
+  
+  //Eigen::Vector3d cop_l_w = iTransl_l + iRotation_l*cop_l_l;
+  //Eigen::Vector3d cop_r_w = iTransl_r + iRotation_r*cop_r_r;
+  Eigen::Vector3d cop_l_w = cop_l_l;
+  Eigen::Vector3d cop_r_w = cop_r_r;
 
   Eigen::Vector3d zmp = (Fz_l*cop_l_w + Fz_r*cop_r_w)/(Fz_l + Fz_r) ;
-  */
+
+  ZMP_sol_file<<zmp.transpose()<<"\n";
+  ZMP_file << getZmpFromExternalForces().transpose()<<"\n";
 
 
   return t_des;
@@ -441,8 +424,12 @@ State Controller::getDesiredRobotState(int timeStep) {
   double x_targ = x_ampl*std::sin(x_freq*timeStep);
   double y_targ = y_ampl*std::cos(y_freq*timeStep);
 
-  state.com.pos = initial_com + (Eigen::Vector3d() << x_targ,y_targ,0.0).finished();
+  state.com.pos = initial_com ;//+ (Eigen::Vector3d() << x_targ,y_targ,0.0).finished();
 
+  state.leftFoot.pos = initial.getLeftFootPose().tail(3);
+  state.rightFoot.pos = initial.getRightFootPose().tail(3);
+  state.leftFoot.ang_pos = initial.getLeftFootPose().head(3);
+  state.rightFoot.ang_pos = initial.getRightFootPose().head(3);
   return state;
 }
 
@@ -505,8 +492,8 @@ void Controller::setInitialConfiguration() {
   mRobot->setPosition(0, 0.0 );
   mRobot->setPosition(1, -0*M_PI/180.0);
   mRobot->setPosition(2, 0.0 );
-  mRobot->setPosition(3, 0.035502257 -0.0);
-  mRobot->setPosition(4, -0.0);
+  mRobot->setPosition(3, 0.0);
+  mRobot->setPosition(4, 0.0);
   mRobot->setPosition(5, 0.751 +0.00138 - 0.000005);
 
   // right leg

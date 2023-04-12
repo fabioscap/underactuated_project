@@ -63,7 +63,7 @@ private:
 
   Eigen::Vector3d initial_com;
   static constexpr int N_links = 66;
-  std::ofstream y_file, com_file, com_des_file;
+  std::ofstream y_file, com_file, com_des_file, ZMP_sol_file, ZMP_file;
 
   bool visualize;
   dart::dynamics::SimpleFramePtr COM_viz, COM_des_viz, ZMP_viz;
