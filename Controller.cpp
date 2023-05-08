@@ -124,7 +124,7 @@ void Controller::update() {
   walkState.simulationTime = mWorld->getSimFrames();
   
   // This adds a push to the robot
-  if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,100,0));
+  // if (walkState.simulationTime>=410 && walkState.simulationTime<=420) mTorso->addExtForce(Eigen::Vector3d(0,100,0));
 
   // Retrieve current and desired state
   current = getCurrentRobotState();
@@ -209,7 +209,7 @@ Eigen::VectorXd Controller::getJointTorques(State& desired,State& current) {
   // add left_errorVector_vel / timeStep;
   Matrixd<12,56+12> B2;
   B2 << J_contact, Matrixd<12,12>::Zero();
-  Matrixd<12, 1> b2 = Jdot_contact*q_dot - (1/(100*timeStep))*(Matrixd<12,1>::Zero() - feet_velocities);
+  Matrixd<12, 1> b2 = Jdot_contact*q_dot - (1/(10*timeStep))*(Matrixd<12,1>::Zero() - feet_velocities);
 
 
   // COM frame is aligned as world frame
@@ -228,11 +228,11 @@ Eigen::VectorXd Controller::getJointTorques(State& desired,State& current) {
   //print_shape("coriolis", mRobot->getCoriolisForces().block<6,1>(0,0));
   Matrixd<6,1> Agdqd = X1Gt*Phi1*((mRobot->getCoriolisForces()).block<6,1>(0,0));
 
-  double K_x = 10;
+  double K_x = 1;
   double K_y = 10;
   double K_z = 10;
   Eigen::Matrix6d K_p = (Eigen::Vector6d() << 0,0,0,K_x, K_y, K_z).finished().asDiagonal(); 
-  double K_d=10;
+  double K_d= 2;
 
   Matrixd<6,56+12> B3 ;
   B3<< Ag, Matrixd<6,12>::Zero();
@@ -240,23 +240,8 @@ Eigen::VectorXd Controller::getJointTorques(State& desired,State& current) {
   Matrixd<6,1>   b3 = Agdqd -K_p*((Eigen::Vector6d()<<Eigen::Vector3d::Zero(), desired.com.pos - current.com.pos).finished())
                             -K_d*((Eigen::Vector6d::Zero()-Ag*q_dot)); // - FFW
     
-  // test for inequality constraints
-  // accel of COM along z axis is bounded
-  /*
-  double a_z_max = 8.0;
-
-  Matrixd<1,56+12> C1 = Matrixd<1,56+12>::Zero();
-  Matrixd<1, 1>    l1;
-  Matrixd<1, 1>    u1;
-  C1.block(0,0,1,56) = Ag.row(5);
-  l1 << -Agdqd(5,0) -a_z_max;
-  u1 << -Agdqd(5,0) +a_z_max;
-
-  solver.add_ineq_contstr(C1, l1, u1, 1);
-  //*/
-
   // ZMP constraints
-  double dx = 0.08; double dy = 0.1; double high_val = 1000;
+  double dx = 0.06; double dy = 0.1; double high_val = 1000;
   auto leftFootTransform = mLeftFoot->getWorldTransform();
   auto rightFootTransform = mRightFoot->getWorldTransform();
   Eigen::Matrix3d iRotation_r = rightFootTransform.rotation();
@@ -323,23 +308,31 @@ Eigen::VectorXd Controller::getJointTorques(State& desired,State& current) {
   solver.set_solve_type(0, hrc::solve_type::Pinv);    
 
   // feet
-  solver.add_eq_constr(B2, -b2, 1);
+  solver.add_eq_constr(B2, -b2, 2);
+  //solver.add_ineq_constr(B2, -b2, -b2, 2);
 
   // centroidal 
-  solver.add_eq_constr(B3,-b3,2);
+  Matrixd<5,56+12> B3_xy = B3.block(0,0,5,56+12);
+  Matrixd<1,56+12> B3_z  = B3.block(5,0,1,56+12);
+  Matrixd<5,1> b3_xy = b3.block(0,0,5,1);
+  Matrixd<1,1> b3_z = b3.block(5,0,1,1);
+
+  solver.add_eq_constr(B3_xy,-b3_xy,3);
+  solver.add_eq_constr(B3_z,-b3_z,3);
 
   // ZMP
-  solver.add_ineq_contstr(C2, l2, u2, 2);
-  solver.add_ineq_contstr(C1, l1, u1, 2);
-
+  if (walkState.simulationTime>=0) {
+    solver.add_ineq_constr(C2, l2, u2, 2);
+    solver.add_ineq_constr(C1, l1, u1, 2);
+  }
   // friction cone
-  //solver.add_ineq_contstr(C3,l3,u3, 2);
+  //solver.add_ineq_constr(C3,l3,u3, 2);
 
   // posture
-  solver.add_eq_constr(B4,-b4,3);
+  solver.add_eq_constr(B4,-b4,5);
 
   // GRF regularizer
-  solver.add_eq_constr(B5,-b5,3);
+  solver.add_eq_constr(B5,-b5,5);
 
   Matrixd<56+12, 1> y_mine = solver.solve();
 
@@ -416,15 +409,15 @@ State Controller::getDesiredRobotState(int timeStep) {
   State state;
   // just COM for now
 
-  double x_ampl = 0.10; 
+  double x_ampl = 0.15; 
   double y_ampl = 0.;   
-  double x_freq = 2*M_PI/500; 
-  double y_freq = 2*M_PI/500;
+  double x_freq = 0*2*M_PI/3000; 
+  double y_freq = 0*2*M_PI/3000;
 
-  double x_targ = x_ampl*std::sin(x_freq*timeStep);
+  double x_targ = x_ampl*std::cos(x_freq*timeStep);
   double y_targ = y_ampl*std::cos(y_freq*timeStep);
 
-  state.com.pos = initial_com ;//+ (Eigen::Vector3d() << x_targ,y_targ,0.0).finished();
+  state.com.pos = initial_com + (Eigen::Vector3d() << x_targ,y_targ,0.0).finished();
 
   state.leftFoot.pos = initial.getLeftFootPose().tail(3);
   state.rightFoot.pos = initial.getRightFootPose().tail(3);

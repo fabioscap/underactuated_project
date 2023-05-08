@@ -47,7 +47,7 @@ namespace hrc {
   };
 
   struct HierarchicalSolver {
-    static constexpr int max_priority_level = 5;
+    static constexpr int max_priority_level = 6;
 
     HierarchicalSolver(int _n_vars): n_vars(_n_vars){}
 
@@ -55,10 +55,10 @@ namespace hrc {
                               const Eigen::MatrixXd& b,
                               unsigned int priority) {groups.at(priority).add_eq_constr(B, b);}
 
-    void add_ineq_contstr(const Eigen::MatrixXd& C,
-                          const Eigen::MatrixXd& lower,
-                          const Eigen::MatrixXd& upper,
-                          unsigned int priority);
+    void add_ineq_constr(const Eigen::MatrixXd& C,
+                         const Eigen::MatrixXd& lower,
+                         const Eigen::MatrixXd& upper,
+                         unsigned int priority);
 
     Eigen::MatrixXd solve();
 

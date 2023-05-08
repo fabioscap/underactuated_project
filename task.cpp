@@ -71,11 +71,20 @@ bool hrc::PriorityGroup::solve(const Eigen::MatrixXd& solution,
 
     // create cost function
     double reg = 1e-8;
-    Eigen::MatrixXd H = B.transpose()*B + reg*projector.transpose()*projector;
+    //Eigen::MatrixXd H = B.transpose()*B + reg*projector.transpose()*projector;
+    //Eigen::VectorXd F = -B.transpose()*b;
+
+    Eigen::MatrixXd H = B.transpose()*B + reg*Eigen::MatrixXd::Identity(projector.cols(),projector.cols());
     Eigen::VectorXd F = -B.transpose()*b;
     
+    //Eigen::MatrixXd H = reg*Eigen::MatrixXd::Identity(projector.cols(),projector.cols());
+    //Eigen::VectorXd F = 0*(-B.transpose()*b);
+
     Eigen::MatrixXd A_dummy = Eigen::MatrixXd::Zero(1,projector.cols());
     Eigen::VectorXd b_dummy = Eigen::VectorXd::Zero(1);
+
+    //Eigen::MatrixXd A_dummy = B;
+    //Eigen::VectorXd b_dummy = b;
 
     std::shared_ptr<labrob::qpsolvers::QPSolverEigenWrapper<double>> IK_qp_solver_ptr_ = std::make_shared<labrob::qpsolvers::QPSolverEigenWrapper<double>>(
         std::make_shared<labrob::qpsolvers::HPIPMQPSolver>(projector.cols(), A_dummy.rows(), C.rows()));
@@ -153,7 +162,7 @@ void hrc::PriorityGroup::add_ineq_constr(const Eigen::MatrixXd &C, const Eigen::
   n_ineqs += C.rows();
 }
 
-void hrc::HierarchicalSolver::add_ineq_contstr(const Eigen::MatrixXd &C, const Eigen::MatrixXd &lower, const Eigen::MatrixXd &upper, unsigned int priority) {
+void hrc::HierarchicalSolver::add_ineq_constr(const Eigen::MatrixXd &C, const Eigen::MatrixXd &lower, const Eigen::MatrixXd &upper, unsigned int priority) {
   // the inequality at priority r is also an equality for priority > r
   unsigned int r = priority;
 
